@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+output/*.jpg
+run_dryrun.bat
+dryrun_log.txt

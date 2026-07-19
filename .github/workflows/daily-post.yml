@@ -1,0 +1,56 @@
+name: Daily News Post
+
+# 매일 08:00 KST(=UTC 23:00 전날)에 자동 실행 + 수동 실행(테스트)도 가능
+on:
+  schedule:
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true면 게시 없이 이미지 생성까지만 테스트"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+# 생성된 이미지를 레포에 커밋/푸시하려면 쓰기 권한 필요
+permissions:
+  contents: write
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 레포 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 파이프라인 실행
+        env:
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          IG_TOKEN_FOOD_INDUSTRY: ${{ secrets.IG_TOKEN_FOOD_INDUSTRY }}
+          IG_ACCOUNT_ID_FOOD_INDUSTRY: ${{ secrets.IG_ACCOUNT_ID_FOOD_INDUSTRY }}
+          IG_TOKEN_STARTUP: ${{ secrets.IG_TOKEN_STARTUP }}
+          IG_ACCOUNT_ID_STARTUP: ${{ secrets.IG_ACCOUNT_ID_STARTUP }}
+          IG_TOKEN_ECOMMERCE: ${{ secrets.IG_TOKEN_ECOMMERCE }}
+          IG_ACCOUNT_ID_ECOMMERCE: ${{ secrets.IG_ACCOUNT_ID_ECOMMERCE }}
+          # 계정 늘어날 때마다 여기에 같은 패턴으로 추가:
+          # IG_TOKEN_REALESTATE: ${{ secrets.IG_TOKEN_REALESTATE }}
+          # IG_ACCOUNT_ID_REALESTATE: ${{ secrets.IG_ACCOUNT_ID_REALESTATE }}
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python pipeline.py --dry-run
+          else
+            python pipeline.py
+          fi
