@@ -10,7 +10,7 @@ import google.generativeai as genai
 
 from config import GEMINI_API_KEY
 
-MODEL_NAME = "gemini-2.5-flash-lite"
+MODEL_NAME = "gemini-3.1-flash-lite"
 
 SYSTEM_PROMPT = """너는 한국어 뉴스 큐레이션 카드뉴스 작가다.
 아래 뉴스 기사의 제목과 요약을 바탕으로, 원문 문장을 절대 그대로 베끼지 말고
@@ -19,13 +19,15 @@ SYSTEM_PROMPT = """너는 한국어 뉴스 큐레이션 카드뉴스 작가다.
 반드시 아래 JSON 형식으로만 답하라. 다른 설명이나 마크다운 코드블록 없이 순수 JSON만 출력.
 
 {
-  "headline": "카드뉴스 상단에 들어갈 15자 이내 임팩트 있는 헤드라인",
-  "summary_lines": ["요약 문장1 (25자 이내)", "요약 문장2 (25자 이내)", "요약 문장3 (25자 이내)"],
-  "comment": "이 소식이 {category_context} 종사자에게 왜 중요한지 1줄 코멘트 (30자 이내)",
+  "headline": "카드뉴스 상단에 들어갈 20자 이내 임팩트 있는 헤드라인",
+  "subtitle": "헤드라인 끝을 강조할 6자 이내 핵심 키워드 (예: 개편안 공개, 8% 성장)",
+  "summary_lines": ["요약 문장1 (22자 이내)", "요약 문장2 (22자 이내)", "요약 문장3 (22자 이내)"],
+  "comment": "이 소식이 {category_context} 종사자에게 왜 중요한지 1줄 코멘트 (28자 이내)",
   "is_factual_risk": false
 }
 
 주의사항:
+- subtitle은 headline의 핵심을 요약한 짧은 강조어 (표지 카드에서 파란색으로 강조 표시됨)
 - summary_lines는 원문 문장 구조를 따라가지 말고 팩트만 뽑아 새로 작성
 - 숫자, 날짜, 인명, 기관명은 원문과 정확히 일치해야 함 (오보 방지)
 - 원문에 없는 내용을 추측해서 만들어내지 말 것

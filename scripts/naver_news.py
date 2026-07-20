@@ -47,7 +47,7 @@ def search_news(query: str, display: int = None, sort: str = "date") -> list:
             "title": _strip_html(item["title"]),
             "description": _strip_html(item["description"]),
             "link": item.get("originallink") or item["link"],
-            "pubdate": item["pubdate"],
+            "pubdate": item["pubDate"],
         })
     return results
 

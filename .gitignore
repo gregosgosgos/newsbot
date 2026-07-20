@@ -1,6 +1,11 @@
 .env
 __pycache__/
 *.pyc
-output/*.jpg
 run_dryrun.bat
+git_push.bat
 dryrun_log.txt
+git_push_log.txt
+# output/*.jpg 는 gitignore하되, 파이프라인이 실게시 때 git add -f 로 강제 추가함
+output/*.jpg
+assets/fonts/Poppins-Bold.ttf
+assets/hero_ecommerce_clean.png

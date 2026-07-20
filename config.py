@@ -129,10 +129,53 @@ CATEGORIES = {
 # ── 카드뉴스 디자인 ──────────────────────────────────────────────────
 IMG_WIDTH = 1080
 IMG_HEIGHT = 1350  # 인스타 4:5 비율 (피드에서 가장 큰 노출 면적)
-# 로컬 Windows에 기본 내장된 맑은 고딕 사용 (별도 폰트 설치 불필요)
-FONT_BOLD = r"C:\Windows\Fonts\malgunbd.ttf"
-FONT_REGULAR = r"C:\Windows\Fonts\malgun.ttf"
-FONT_INDEX_KR = 0  # 맑은 고딕은 단일 폰트라 index 0 고정
+# ── 폰트/에셋 경로 (OS 자동감지: 로컬 Windows / GitHub Actions 리눅스) ──
+ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
+
+def _find(paths):
+    for p in paths:
+        if os.path.exists(p):
+            return p
+    return paths[-1]
+
+KR_BOLD = _find([r"C:\Windows\Fonts\malgunbd.ttf",
+                 os.path.join(ASSETS_DIR, "fonts", "NotoSansKR-Bold.ttf"),
+                 "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+                 "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"])
+KR_REG = _find([r"C:\Windows\Fonts\malgun.ttf",
+                os.path.join(ASSETS_DIR, "fonts", "NotoSansKR-Regular.ttf"),
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"])
+KR_INDEX = 1 if (KR_BOLD.endswith(".ttc") and "NotoSansCJK" in KR_BOLD) else 0
+FA_PATH = _find(["/usr/share/fonts/opentype/font-awesome/FontAwesome.otf",
+                 "/usr/share/fonts-font-awesome/fonts/FontAwesome.otf",
+                 os.path.join(ASSETS_DIR, "fonts", "FontAwesome.otf")])
+NUM_PATH = _find([os.path.join(ASSETS_DIR, "fonts", "Poppins-Bold.ttf"),
+                  "/usr/share/fonts/truetype/google-fonts/Poppins-Bold.ttf",
+                  KR_BOLD])
+
+# 기존 단일 카드 호환용(사용 안 해도 무방)
+FONT_BOLD, FONT_REGULAR, FONT_INDEX_KR = KR_BOLD, KR_REG, KR_INDEX
+
+# ── 계정(카테고리)별 메타 ────────────────────────────────────────────
+CATEGORY_HANDLE = {
+    "food_industry": "@food_industry_news",
+    "startup": "@startup_insight_news",
+    "ecommerce": "@ecommerce_insight",
+}
+# 표지/상세에 쓸 Font Awesome 아이콘 3종 (image_gen.FA_G 키)
+CATEGORY_ICONS = {
+    "food_industry": ["cutlery", "money", "chart"],
+    "startup": ["briefcase", "lightbulb", "money"],
+    "ecommerce": ["doc", "rocket", "chart"],
+}
+# 표지 후킹 문구 (계정 성격에 맞춘 고정 슬로건)
+CATEGORY_HOOK = {
+    "food_industry": "바쁜 사장님이 놓치면 안 될 3가지 핵심",
+    "startup": "창업·자영업 오늘의 핵심 3가지",
+    "ecommerce": "오늘 셀러가 놓치면 안 될 3가지 핵심 이슈",
+}
+DEFAULT_HOOK = "오늘 꼭 알아야 할 핵심 3가지"
 
 # 카테고리별 브랜드 컬러 (계정마다 시각적 아이덴티티 구분)
 CATEGORY_COLORS = {

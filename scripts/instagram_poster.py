@@ -54,6 +54,57 @@ def post_image(ig_user_id: str, access_token: str, image_url: str, caption: str)
     return {"success": True, "post_id": publish_data["id"], "error": None}
 
 
+def post_carousel(ig_user_id: str, access_token: str, image_urls: list, caption: str) -> dict:
+    """여러 장(표지+상세)을 하나의 캐러셀 게시물로 발행.
+    1) 각 이미지를 is_carousel_item 컨테이너로 생성
+    2) media_type=CAROUSEL 부모 컨테이너 생성 (children=자식ID들)
+    3) media_publish 로 발행
+    """
+    child_ids = []
+    for url in image_urls:
+        r = requests.post(
+            f"{GRAPH_BASE}/{ig_user_id}/media",
+            data={"image_url": url, "is_carousel_item": "true", "access_token": access_token},
+            timeout=30,
+        ).json()
+        if "id" not in r:
+            return {"success": False, "post_id": None, "error": f"자식 컨테이너 실패: {r}"}
+        child_ids.append(r["id"])
+        time.sleep(2)
+
+    parent = requests.post(
+        f"{GRAPH_BASE}/{ig_user_id}/media",
+        data={"media_type": "CAROUSEL", "children": ",".join(child_ids),
+              "caption": caption, "access_token": access_token},
+        timeout=30,
+    ).json()
+    if "id" not in parent:
+        return {"success": False, "post_id": None, "error": f"캐러셀 컨테이너 실패: {parent}"}
+
+    time.sleep(2)
+    pub = requests.post(
+        f"{GRAPH_BASE}/{ig_user_id}/media_publish",
+        data={"creation_id": parent["id"], "access_token": access_token},
+        timeout=30,
+    ).json()
+    if "id" not in pub:
+        return {"success": False, "post_id": None, "error": f"발행 실패: {pub}"}
+    return {"success": True, "post_id": pub["id"], "error": None}
+
+
 def build_caption(headline: str, comment: str, source_note: str = "") -> str:
     tags = "#뉴스 #오늘의뉴스 #이슈"
     return f"{headline}\n\n{comment}\n\n{source_note}\n\n{tags}"
+
+
+def build_carousel_caption(cat_name: str, items: list) -> str:
+    """캐러셀 캡션: 오늘의 뉴스 3건 + 원문 링크 + 해시태그."""
+    lines = [f"📢 오늘의 {cat_name} 뉴스"]
+    for i, it in enumerate(items, 1):
+        lines.append(f"{i}. {it['headline']}")
+    srcs = [it.get("source", "") for it in items if it.get("source")]
+    if srcs:
+        lines.append("\n원문:")
+        lines += [f"· {s}" for s in srcs]
+    lines.append("\n#뉴스 #오늘의뉴스 #" + cat_name.replace("/", " #"))
+    return "\n".join(lines)
