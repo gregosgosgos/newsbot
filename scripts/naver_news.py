@@ -69,7 +69,22 @@ def _is_duplicate(norm: str, kept: list, thresh: float = 0.55) -> bool:
     return False
 
 
+def _similar(a: str, b: str, thresh: float = 0.55) -> bool:
+    if not a or not b:
+        return False
+    if difflib.SequenceMatcher(None, a, b).ratio() >= thresh:
+        return True
+    short, long = sorted([a, b], key=len)
+    return len(short) >= 8 and short in long
+
+
 def collect_category_news(keywords: list, hours_window: int = 20) -> list:
+    """화제성(보도량) 기준으로 정렬한 대표 기사 리스트를 반환.
+
+    같은 사건을 다룬 기사들을 하나의 클러스터로 묶고, 클러스터 크기(= 얼마나 많은
+    매체가 보도했는가)가 큰 순서로 정렬한다. 화제인 뉴스일수록 여러 곳이 동시에
+    보도하므로 이 값이 화제성의 좋은 근사치가 된다. 각 클러스터의 대표는 최신 기사.
+    """
     now = datetime.now(KST)
     cutoff = now - timedelta(hours=hours_window)
 
@@ -90,16 +105,31 @@ def collect_category_news(keywords: list, hours_window: int = 20) -> list:
             it["matched_keyword"] = kw
             pool.append(it)
 
-    # 최신순 정렬 후 유사 제목 중복 제거 (같은 사건은 최신 1건만)
+    # 최신순으로 훑으며 유사 제목끼리 클러스터링 (대표 = 클러스터 내 최신 기사)
     pool.sort(key=lambda x: _parse_pubdate(x["pubdate"]), reverse=True)
-    kept_norms, merged = [], []
+    clusters = []  # {"norm", "items": [...], "keywords": set}
     for it in pool:
         n = _norm_title(it["title"])
-        if _is_duplicate(n, kept_norms):
-            continue
-        kept_norms.append(n)
-        merged.append(it)
-    return merged
+        for c in clusters:
+            if _similar(n, c["norm"]):
+                c["items"].append(it)
+                c["keywords"].add(it["matched_keyword"])
+                break
+        else:
+            clusters.append({"norm": n, "items": [it], "keywords": {it["matched_keyword"]}})
+
+    # 화제성 점수: 보도량(클러스터 크기) > 키워드 다양성 > 최신성
+    clusters.sort(
+        key=lambda c: (len(c["items"]), len(c["keywords"]),
+                       _parse_pubdate(c["items"][0]["pubdate"])),
+        reverse=True,
+    )
+    result = []
+    for c in clusters:
+        rep = c["items"][0]           # 대표 = 최신 기사
+        rep["buzz"] = len(c["items"])  # 보도량(참고용)
+        result.append(rep)
+    return result
 
 
 def fetch_article_text(url: str, max_chars: int = 2500) -> str:
