@@ -5,6 +5,7 @@
 카테고리마다 config.py 의 키워드들로 여러 번 검색해서 뉴스 풀을 직접 구성한다.
 """
 import re
+import difflib
 import requests
 from html import unescape
 from datetime import datetime, timedelta, timezone
@@ -52,19 +53,33 @@ def search_news(query: str, display: int = None, sort: str = "date") -> list:
     return results
 
 
+def _norm_title(t: str) -> str:
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", t).lower()
+
+def _is_duplicate(norm: str, kept: list, thresh: float = 0.55) -> bool:
+    """이미 채택된 제목들과 유사하면 True (같은 사건 다른 기사 제거)."""
+    for k in kept:
+        if not norm or not k:
+            continue
+        if difflib.SequenceMatcher(None, norm, k).ratio() >= thresh:
+            return True
+        short, long = sorted([norm, k], key=len)
+        if len(short) >= 8 and short in long:   # 한쪽이 다른쪽에 크게 포함
+            return True
+    return False
+
+
 def collect_category_news(keywords: list, hours_window: int = 20) -> list:
     now = datetime.now(KST)
     cutoff = now - timedelta(hours=hours_window)
 
-    seen_titles = set()
-    merged = []
+    pool = []
     for kw in keywords:
         try:
             items = search_news(kw)
         except Exception as e:
             print(f"[WARN] '{kw}' 검색 실패: {e}")
             continue
-
         for it in items:
             try:
                 pub = _parse_pubdate(it["pubdate"])
@@ -72,15 +87,34 @@ def collect_category_news(keywords: list, hours_window: int = 20) -> list:
                 continue
             if pub < cutoff:
                 continue
-            key = it["title"]
-            if key in seen_titles:
-                continue
-            seen_titles.add(key)
             it["matched_keyword"] = kw
-            merged.append(it)
+            pool.append(it)
 
-    merged.sort(key=lambda x: _parse_pubdate(x["pubdate"]), reverse=True)
+    # 최신순 정렬 후 유사 제목 중복 제거 (같은 사건은 최신 1건만)
+    pool.sort(key=lambda x: _parse_pubdate(x["pubdate"]), reverse=True)
+    kept_norms, merged = [], []
+    for it in pool:
+        n = _norm_title(it["title"])
+        if _is_duplicate(n, kept_norms):
+            continue
+        kept_norms.append(n)
+        merged.append(it)
     return merged
+
+
+def fetch_article_text(url: str, max_chars: int = 2500) -> str:
+    """기사 원문 링크에서 본문 텍스트 추출 (trafilatura). 실패 시 빈 문자열."""
+    try:
+        import trafilatura
+        downloaded = trafilatura.fetch_url(url)
+        if not downloaded:
+            return ""
+        txt = trafilatura.extract(downloaded, include_comments=False,
+                                  include_tables=False, favor_precision=True) or ""
+        return txt.strip()[:max_chars]
+    except Exception as e:
+        print(f"[WARN] 본문 추출 실패 {url}: {e}")
+        return ""
 
 
 if __name__ == "__main__":

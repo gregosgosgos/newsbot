@@ -1,8 +1,9 @@
 """
-Gemini API를 이용한 뉴스 재구성.
+Gemini API를 이용한 뉴스 재구성 (설명형).
 
-원문 문장을 그대로 베끼지 않고 팩트만 추출해서 새 문장으로 재구성 (저작권 리스크 최소화).
-모델: gemini-2.5-flash-lite (무료 티어)
+기사 본문을 바탕으로, 일반 독자가 읽고 이해할 수 있게 팩트를 풀어서 설명한다.
+원문 문장을 그대로 베끼지 않고 새 문장으로 재구성 (저작권 리스크 최소화).
+모델: gemini-3.1-flash-lite (무료 티어)
 """
 import json
 import re
@@ -13,24 +14,27 @@ from config import GEMINI_API_KEY
 MODEL_NAME = "gemini-3.1-flash-lite"
 
 SYSTEM_PROMPT = """너는 한국어 뉴스 큐레이션 카드뉴스 작가다.
-아래 뉴스 기사의 제목과 요약을 바탕으로, 원문 문장을 절대 그대로 베끼지 말고
-팩트(누가/무엇을/언제/수치)만 추출해서 완전히 새로운 문장으로 재구성하라.
+아래 기사(제목/요약/본문)를 바탕으로, 뉴스를 잘 모르는 일반 독자도 읽고 이해할 수 있게
+팩트를 쉽게 풀어서 설명하라. 원문 문장을 그대로 베끼지 말고 새 문장으로 재구성한다.
 
 반드시 아래 JSON 형식으로만 답하라. 다른 설명이나 마크다운 코드블록 없이 순수 JSON만 출력.
 
 {
-  "headline": "카드뉴스 상단에 들어갈 20자 이내 임팩트 있는 헤드라인",
-  "subtitle": "헤드라인 끝을 강조할 6자 이내 핵심 키워드 (예: 개편안 공개, 8% 성장)",
-  "summary_lines": ["요약 문장1 (22자 이내)", "요약 문장2 (22자 이내)", "요약 문장3 (22자 이내)"],
-  "comment": "이 소식이 {category_context} 종사자에게 왜 중요한지 1줄 코멘트 (28자 이내)",
+  "headline": "20자 이내 임팩트 있는 헤드라인",
+  "subtitle": "헤드라인 핵심을 요약한 6자 이내 강조 키워드 (예: 개편안 공개, 8% 성장)",
+  "lead": "무슨 일이 있었는지 2~3문장으로 설명 (총 90자 내외, 구체적 사실 중심)",
+  "facts": ["핵심 팩트1 (수치/주체 등, 18자 이내)", "핵심 팩트2 (18자 이내)", "핵심 팩트3 (18자 이내)"],
+  "background": "이 일이 나온 배경/맥락을 2~3문장으로 (총 90자 내외)",
+  "simple": "핵심을 비유나 쉬운 말로 풀어 2문장으로 (총 80자 내외)",
+  "why": "이 소식이 {category_context} 종사자에게 왜 중요한지 1문장 (35자 이내)",
   "is_factual_risk": false
 }
 
 주의사항:
-- subtitle은 headline의 핵심을 요약한 짧은 강조어 (표지 카드에서 파란색으로 강조 표시됨)
-- summary_lines는 원문 문장 구조를 따라가지 말고 팩트만 뽑아 새로 작성
-- 숫자, 날짜, 인명, 기관명은 원문과 정확히 일치해야 함 (오보 방지)
-- 원문에 없는 내용을 추측해서 만들어내지 말 것
+- 모든 문장은 원문 구조를 따라가지 말고 팩트만 뽑아 새로 작성
+- 숫자, 날짜, 인명, 기관명은 원문과 정확히 일치 (오보 방지)
+- 본문에 없는 내용을 추측해서 지어내지 말 것. 정보가 부족하면 있는 사실만 쓴다
+- background/simple은 독자가 "그래서 이게 무슨 의미인지" 이해하도록 쉽게
 - 확실하지 않은 수치/사실이 있으면 is_factual_risk를 true로 설정
 """
 
@@ -41,14 +45,20 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
-def rewrite_news(title: str, description: str, category_context: str) -> dict:
+def rewrite_news(title: str, description: str, body: str, category_context: str) -> dict:
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
 
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_PROMPT.replace("{category_context}", category_context))
+    model = genai.GenerativeModel(
+        MODEL_NAME,
+        system_instruction=SYSTEM_PROMPT.replace("{category_context}", category_context),
+    )
 
-    user_prompt = f"제목: {title}\n요약: {description}"
+    parts = [f"제목: {title}", f"요약: {description}"]
+    if body:
+        parts.append(f"본문:\n{body}")
+    user_prompt = "\n".join(parts)
 
     response = model.generate_content(
         user_prompt,
@@ -61,7 +71,6 @@ def rewrite_news(title: str, description: str, category_context: str) -> dict:
         raise RuntimeError(f"Gemini 응답 JSON 파싱 실패: {e}\n원본 응답: {getattr(response, 'text', None)}")
 
     parsed["_original_title"] = title
-    parsed["_original_description"] = description
     return parsed
 
 
@@ -69,6 +78,7 @@ if __name__ == "__main__":
     sample = rewrite_news(
         title="외식업계, 배달앱 수수료 인하 요구 확산",
         description="자영업자 단체들이 배달앱 3사에 수수료 인하를 공동 요청했다고 19일 밝혔다.",
+        body="",
         category_context="식품/외식업",
     )
     print(json.dumps(sample, ensure_ascii=False, indent=2))

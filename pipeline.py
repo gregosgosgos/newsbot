@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 
 from config import CATEGORIES, NEWS_PER_CATEGORY, CATEGORY_HOOK, DEFAULT_HOOK
 from accounts import get_account_credentials, list_active_categories
-from scripts.naver_news import collect_category_news
+from scripts.naver_news import collect_category_news, fetch_article_text
 from scripts.rewriter import rewrite_news
 from scripts.image_gen import generate_carousel
 from scripts.instagram_poster import post_carousel, build_carousel_caption
@@ -66,14 +66,18 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
     items = []
     for item in news_items:
         try:
-            content = rewrite_news(item["title"], item["description"], cat_name)
+            body = fetch_article_text(item.get("link", ""))
+            content = rewrite_news(item["title"], item["description"], body, cat_name)
             if content.get("is_factual_risk"):
                 result["errors"].append(f"[스킵] 팩트 리스크: {content.get('headline')}"); continue
             items.append({
                 "headline": content.get("headline", ""),
                 "subtitle": content.get("subtitle", ""),
-                "summary_lines": content.get("summary_lines", []),
-                "comment": content.get("comment", ""),
+                "lead": content.get("lead", ""),
+                "facts": content.get("facts", []),
+                "background": content.get("background", ""),
+                "simple": content.get("simple", ""),
+                "why": content.get("why", ""),
                 "source": item.get("link", ""),
             })
         except Exception as e:

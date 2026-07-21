@@ -278,21 +278,125 @@ def render_detail(category_id, cat_name, date_str, idx, total,
     return out_path
 
 
+# ── 설명형 상세 (뉴스 1건 = 2페이지) ────────────────────────────────
+_DBG_T, _DBG_M, _DBG_B = (18, 32, 58), (11, 21, 42), (6, 12, 26)  # 차분한 딥네이비
+_DBODY = (234, 240, 250)   # 본문 near-white
+_DLH = 62
+
+def _lighten(rgb, f):
+    return tuple(int(c + (255-c)*f) for c in rgb)
+
+def _wrap_words(d, text, font, maxw):
+    """자연 자간(폰트 그대로) 어절 단위 줄바꿈."""
+    out = []
+    for para in str(text).split("\n"):
+        cur = ""
+        for w in para.split(" "):
+            test = (cur + " " + w).strip()
+            if d.textlength(test, font=font) > maxw and cur:
+                out.append(cur); cur = w
+            else:
+                cur = test
+            while d.textlength(cur, font=font) > maxw:
+                cut = cur
+                while d.textlength(cut, font=font) > maxw and len(cut) > 1:
+                    cut = cut[:-1]
+                out.append(cut); cur = cur[len(cut):]
+        out.append(cur)
+    return out
+
+def _para(d, text, font, x, y, maxw, fill, lh=_DLH):
+    for ln in _wrap_words(d, text, font, maxw):
+        d.text((x, y), ln, font=font, fill=fill); y += lh
+    return y
+
+def _para_h(d, text, font, maxw, lh=_DLH):
+    return len(_wrap_words(d, text, font, maxw)) * lh
+
+def _dhead(img, d, M, acc, cat_color, date, idx, page):
+    d.text((M, 92), f"NEWS {idx}   ·   {page} / 2", font=_nf(32), fill=acc)
+    d.text((W-M, 96), date, font=_kf(False, 30), fill=(140, 160, 205), anchor="rm")
+
+def _dsection(d, M, label, y, acc):
+    d.text((M, y), label, font=_kf(True, 34), fill=acc); return y + 60
+
+def _dfooter(d, M, handle, tail):
+    d.line([(M, H-104), (W-M, H-104)], fill=(70, 95, 150), width=2)
+    d.text((M, H-58), handle, font=_kf(True, 34), fill=(150, 178, 255), anchor="lm")
+    d.text((W-M, H-58), tail, font=_kf(False, 28), fill=(120, 140, 180), anchor="rm")
+
+def render_explainer_1(category_id, date_str, idx, headline, lead, facts, source, out_path):
+    cat_color = _palette(CATEGORY_COLORS.get(category_id, "#3f7bff"))[0]
+    acc = _lighten(cat_color, 0.42); handle = CATEGORY_HANDLE.get(category_id, "@news")
+    base = _glow(_bg(_DBG_T, _DBG_M, _DBG_B), 150, 40, 760, _lighten(cat_color, 0.05), .26)
+    img = base.convert("RGBA"); d = ImageDraw.Draw(img); M = 88
+    _dhead(img, d, M, acc, cat_color, date_str, idx, 1)
+    y = 168; HF = _kf(True, 64)
+    for ln in _wrap_words(d, headline, HF, W-2*M):
+        d.text((M, y), ln, font=HF, fill=(255, 255, 255)); y += int(64*1.24)
+    y += 8; d.rounded_rectangle([M, y, M+120, y+9], radius=4, fill=acc); y += 72
+    y = _dsection(d, M, "무슨 일이 있었나", y, acc)
+    y = _para(d, lead, _kf(False, 39), M, y, W-2*M, _DBODY) + 54
+    y = _dsection(d, M, "핵심 팩트", y, acc)
+    for f in facts[:3]:
+        d.ellipse([M, y+16, M+18, y+16+18], fill=acc)
+        y = _para(d, f, _kf(True, 37), M+48, y, W-M-48-M, (240, 244, 255), 52) + 24
+    _dfooter(d, M, handle, "왜 중요한지 다음 장 →")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    img.convert("RGB").save(out_path, "JPEG", quality=92)
+    return out_path
+
+def render_explainer_2(category_id, date_str, idx, headline, background, simple, why,
+                       is_last, out_path):
+    cat_color = _palette(CATEGORY_COLORS.get(category_id, "#3f7bff"))[0]
+    acc = _lighten(cat_color, 0.42); handle = CATEGORY_HANDLE.get(category_id, "@news")
+    base = _glow(_bg(_DBG_T, _DBG_M, _DBG_B), 930, 40, 720, _lighten(cat_color, 0.05), .24)
+    img = base.convert("RGBA"); d = ImageDraw.Draw(img); M = 88
+    _dhead(img, d, M, acc, cat_color, date_str, idx, 2)
+    y = 160; HF2 = _kf(True, 40)
+    for ln in _wrap_words(d, headline, HF2, W-2*M):
+        d.text((M, y), ln, font=HF2, fill=_lighten(cat_color, 0.35)); y += 54
+    y += 34
+    y = _dsection(d, M, "배경", y, acc)
+    y = _para(d, background, _kf(False, 38), M, y, W-2*M, _DBODY) + 50
+    y = _dsection(d, M, "쉽게 말하면", y, acc)
+    y = _para(d, simple, _kf(False, 38), M, y, W-2*M, _DBODY) + 8
+    inner = W-2*M-88
+    wh = _para_h(d, why, _kf(True, 38), inner, 52)
+    box_h = 60 + 44 + wh + 34
+    by = H - 150 - box_h
+    _glass(img, [M, by, W-M, by+box_h], radius=26, alpha=52); d = ImageDraw.Draw(img)
+    d.rounded_rectangle([M, by, M+12, by+box_h], radius=6, fill=acc)
+    d.text((M+44, by+34), "이 소식이 왜 중요한가", font=_kf(True, 30), fill=acc)
+    _para(d, why, _kf(True, 38), M+44, by+86, inner, (245, 248, 255), 52)
+    _dfooter(d, M, handle, "팔로우하고 매일 받아보기" if is_last else "다음 뉴스 →")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    img.convert("RGB").save(out_path, "JPEG", quality=92)
+    return out_path
+
+
 def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, prefix):
-    """items = [{headline, subtitle, summary_lines, comment, source}] (최대 3).
-    반환: [표지경로, 상세1, 상세2, ...] (슬라이드 순서)."""
+    """items = [{headline, subtitle, lead, facts, background, simple, why, source}] (최대 3).
+    반환: [표지, 뉴스1-p1, 뉴스1-p2, 뉴스2-p1, ...] (표지 1 + 뉴스별 2장)."""
     paths = []
     cover = os.path.join(out_dir, f"{prefix}_0.jpg")
     render_cover(category_id, cat_name, date_str, hook,
                  [(it["headline"], it.get("subtitle", "")) for it in items], cover)
     paths.append(cover)
     total = len(items)
+    slide = 0
     for i, it in enumerate(items, 1):
-        p = os.path.join(out_dir, f"{prefix}_{i}.jpg")
-        render_detail(category_id, cat_name, date_str, i, total,
-                      it["headline"], it.get("summary_lines", []),
-                      it.get("comment", ""), it.get("source", ""), p)
-        paths.append(p)
+        slide += 1
+        p1 = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
+        render_explainer_1(category_id, date_str, i, it["headline"],
+                           it.get("lead", ""), it.get("facts", []), it.get("source", ""), p1)
+        paths.append(p1)
+        slide += 1
+        p2 = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
+        render_explainer_2(category_id, date_str, i, it["headline"],
+                           it.get("background", ""), it.get("simple", ""),
+                           it.get("why", ""), i == total, p2)
+        paths.append(p2)
     return paths
 
 
@@ -306,15 +410,24 @@ def generate_card(content, category_id, category_name_kr, output_path):
 
 if __name__ == "__main__":
     items = [
-        {"headline": "네이버 스마트스토어 수수료 정책 개편안 공개", "subtitle": "개편안 공개",
-         "summary_lines": ["11월부터 결제 수수료 구간 개편 적용", "소규모 판매자 부담 완화 방향", "세부 요율표는 8월 중 공지 예정"],
-         "comment": "정산 구조가 바뀌는 만큼 마진 재점검이 필요합니다", "source": "news.example.com"},
-        {"headline": "쿠팡, 로켓배송 입점 기준 강화 발표", "subtitle": "강화 발표",
-         "summary_lines": ["신규 입점 심사 항목 확대", "품질·배송 지표 미달 시 노출 제한", "기존 셀러도 재평가 대상 포함"],
-         "comment": "입점·유지 조건이 까다로워져 대비가 필요합니다", "source": "news.example.com"},
-        {"headline": "이커머스 상반기 거래액 전년비 8% 성장", "subtitle": "8% 성장",
-         "summary_lines": ["패션·뷰티 카테고리가 성장 견인", "모바일 결제 비중 역대 최고", "하반기 성장률은 둔화 전망"],
-         "comment": "성장 카테고리로 상품 구성을 점검할 시점입니다", "source": "news.example.com"},
+        {"headline": "알리익스프레스, EU 과징금 9300억", "subtitle": "과징금 9300억",
+         "lead": "EU 집행위원회가 중국 이커머스 플랫폼 알리익스프레스에 약 9,314억 원의 과징금을 부과했습니다. 위조품과 안전 기준을 못 맞춘 위험 상품이 계속 팔렸는데 이를 제대로 걸러내지 못했다는 이유입니다.",
+         "facts": ["과징금 규모: 약 9,314억 원", "제재 주체: EU 집행위원회", "사유: 위험 상품 차단 의무 위반"],
+         "background": "EU는 지난해부터 디지털서비스법(DSA)으로 대형 플랫폼에 불법·위험 상품을 빠르게 제거할 의무를 지우고 있습니다. 유럽 이용자가 많은 알리는 핵심 감시 대상이었습니다.",
+         "simple": "가짜·위험한 물건 방치를 이유로 판매자가 아닌 플랫폼이 직접 벌금을 문 첫 사례급 사건입니다.",
+         "why": "국내 셀러도 가격 경쟁과 해외 소싱 전략을 다시 볼 시점입니다.", "source": "news.example.com"},
+        {"headline": "쿠팡, 로켓배송 입점 기준 강화", "subtitle": "기준 강화",
+         "lead": "쿠팡이 로켓배송 신규 입점 심사 기준을 강화한다고 밝혔습니다. 품질과 배송 지표가 미달하면 노출이 제한되고 기존 셀러도 재평가 대상에 포함됩니다.",
+         "facts": ["신규 입점 심사 항목 확대", "지표 미달 시 노출 제한", "기존 셀러도 재평가 대상"],
+         "background": "쿠팡은 로켓배송 상품 수가 급증하면서 품질 관리 부담이 커졌습니다. 소비자 신뢰 유지를 위해 입점 문턱을 높이는 흐름입니다.",
+         "simple": "이제 로켓배송에 들어가고 유지하려면 품질·배송 성적표가 더 중요해졌다는 뜻입니다.",
+         "why": "입점·유지 조건이 까다로워져 사전 대비가 필요합니다.", "source": "news.example.com"},
+        {"headline": "이커머스 상반기 거래액 8% 성장", "subtitle": "8% 성장",
+         "lead": "올해 상반기 국내 이커머스 거래액이 전년 대비 8% 늘었습니다. 패션·뷰티가 성장을 견인했고 모바일 결제 비중은 역대 최고를 기록했습니다.",
+         "facts": ["거래액 전년비 8% 증가", "패션·뷰티가 성장 견인", "모바일 결제 비중 최고"],
+         "background": "고물가 속에서도 온라인 소비는 계속 늘었습니다. 다만 하반기는 성장률이 둔화될 것이라는 전망이 나옵니다.",
+         "simple": "시장은 아직 크고 있지만 성장 속도는 점점 완만해지는 국면입니다.",
+         "why": "성장 카테고리 중심으로 상품 구성을 점검할 시점입니다.", "source": "news.example.com"},
     ]
     ps = generate_carousel("ecommerce", "이커머스", "2026.07.20",
                            "오늘 셀러가 놓치면 안 될 3가지 핵심 이슈", items, "output", "ecommerce_test")
