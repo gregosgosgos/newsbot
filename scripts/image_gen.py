@@ -375,12 +375,13 @@ def render_explainer_2(category_id, date_str, idx, headline, background, simple,
     y = _para(d, simple, _kf(False, 39), M, y, W-2*M, _DBODY) + 8
     inner = W-2*M-88
     wh = _para_h(d, why, _kf(True, 38), inner, 52)
-    box_h = 60 + 44 + wh + 34
+    box_h = 56 + wh + 40
     by = H - 150 - box_h
-    _glass(img, [M, by, W-M, by+box_h], radius=26, alpha=52); d = ImageDraw.Draw(img)
+    _glass(img, [M, by, W-M, by+box_h], radius=26, alpha=52)
+    _fa_icon(img, FA_G["lightbulb"], M+44+20, by+50, 52, acc)   # 💡 아이콘 라벨
+    d = ImageDraw.Draw(img)
     d.rounded_rectangle([M, by, M+12, by+box_h], radius=6, fill=acc)
-    d.text((M+44, by+34), "이 소식이 왜 중요한가", font=_kf(True, 30), fill=acc)
-    _para(d, why, _kf(True, 38), M+44, by+86, inner, (245, 248, 255), 52)
+    _para(d, why, _kf(True, 38), M+96, by+22, inner-52, (245, 248, 255), 52)
     _dfooter(d, M, handle, "팔로우하고 매일 받아보기" if is_last else "다음 뉴스 →")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=92)
