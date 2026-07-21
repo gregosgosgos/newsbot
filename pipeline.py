@@ -47,7 +47,7 @@ def git_commit_and_push(message: str):
     subprocess.run(["git", "commit", "-m", message], check=True)
     subprocess.run(["git", "push"], check=True)
     logger.info("[git] 이미지 커밋+푸시 완료")
-    time.sleep(5)
+    time.sleep(20)   # raw.githubusercontent CDN 전파 대기 (인스타 fetch 실패 방지)
 
 
 def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
@@ -59,15 +59,22 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
     if not creds and not dry_run:
         result["errors"].append("계정 인증정보 없음 (아직 세팅 안 됨) -> 스킵"); return result
 
-    news_items = collect_category_news(cat["keywords"])[:NEWS_PER_CATEGORY]
-    if not news_items:
+    candidates = collect_category_news(cat["keywords"])
+    if not candidates:
         result["errors"].append("수집된 뉴스 없음"); return result
 
     items = []
-    for item in news_items:
+    examined = 0
+    MAX_EXAMINE = NEWS_PER_CATEGORY + 5   # 광고/스킵 대비 여유 후보 검토
+    for item in candidates:
+        if len(items) >= NEWS_PER_CATEGORY or examined >= MAX_EXAMINE:
+            break
+        examined += 1
         try:
             body = fetch_article_text(item.get("link", ""))
             content = rewrite_news(item["title"], item["description"], body, cat_name)
+            if content.get("is_promotional"):
+                result["errors"].append(f"[스킵] 광고/홍보성: {item['title']}"); continue
             if content.get("is_factual_risk"):
                 result["errors"].append(f"[스킵] 팩트 리스크: {content.get('headline')}"); continue
             items.append({

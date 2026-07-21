@@ -27,7 +27,8 @@ SYSTEM_PROMPT = """너는 한국어 뉴스 큐레이션 카드뉴스 작가다.
   "background": "이 일이 나온 배경/맥락을 2~3문장으로 (총 90자 내외)",
   "simple": "핵심을 비유나 쉬운 말로 풀어 2문장으로 (총 80자 내외)",
   "why": "이 소식이 {category_context} 종사자에게 왜 중요한지 1문장 (35자 이내)",
-  "is_factual_risk": false
+  "is_factual_risk": false,
+  "is_promotional": false
 }
 
 주의사항:
@@ -36,6 +37,9 @@ SYSTEM_PROMPT = """너는 한국어 뉴스 큐레이션 카드뉴스 작가다.
 - 본문에 없는 내용을 추측해서 지어내지 말 것. 정보가 부족하면 있는 사실만 쓴다
 - background/simple은 독자가 "그래서 이게 무슨 의미인지" 이해하도록 쉽게
 - 확실하지 않은 수치/사실이 있으면 is_factual_risk를 true로 설정
+- is_promotional: 이 기사가 사회적으로 의미 있는 '뉴스'가 아니라 특정 기업·제품·서비스의
+  홍보/광고성(신제품 출시·이벤트·할인·프로모션·보도자료 위주)이면 true. 산업 동향·정책·
+  시장 변화 등 실제 뉴스면 false
 """
 
 

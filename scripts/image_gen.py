@@ -305,13 +305,28 @@ def _wrap_words(d, text, font, maxw):
         out.append(cur)
     return out
 
+def _wrap_balanced(d, text, font, maxw):
+    """줄 수는 유지하되 각 줄 길이를 고르게 맞춰 뚝뚝 끊기는 느낌을 줄인다."""
+    lines = _wrap_words(d, text, font, maxw)
+    n = len(lines)
+    if n <= 1:
+        return lines
+    lo, hi, best = 1, int(maxw), int(maxw)
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if len(_wrap_words(d, text, font, mid)) <= n:
+            best = mid; hi = mid - 1
+        else:
+            lo = mid + 1
+    return _wrap_words(d, text, font, best)
+
 def _para(d, text, font, x, y, maxw, fill, lh=_DLH):
-    for ln in _wrap_words(d, text, font, maxw):
+    for ln in _wrap_balanced(d, text, font, maxw):
         d.text((x, y), ln, font=font, fill=fill); y += lh
     return y
 
 def _para_h(d, text, font, maxw, lh=_DLH):
-    return len(_wrap_words(d, text, font, maxw)) * lh
+    return len(_wrap_balanced(d, text, font, maxw)) * lh
 
 def _dhead(img, d, M, acc, cat_color, date, idx, page):
     d.text((M, 92), f"NEWS {idx}   ·   {page} / 2", font=_nf(32), fill=acc)
@@ -353,14 +368,11 @@ def render_explainer_2(category_id, date_str, idx, headline, background, simple,
     base = _glow(_bg(_DBG_T, _DBG_M, _DBG_B), 930, 40, 720, _lighten(cat_color, 0.05), .24)
     img = base.convert("RGBA"); d = ImageDraw.Draw(img); M = 88
     _dhead(img, d, M, acc, cat_color, date_str, idx, 2)
-    y = 160; HF2 = _kf(True, 40)
-    for ln in _wrap_words(d, headline, HF2, W-2*M):
-        d.text((M, y), ln, font=HF2, fill=_lighten(cat_color, 0.35)); y += 54
-    y += 34
+    y = 230
     y = _dsection(d, M, "배경", y, acc)
-    y = _para(d, background, _kf(False, 38), M, y, W-2*M, _DBODY) + 50
+    y = _para(d, background, _kf(False, 39), M, y, W-2*M, _DBODY) + 60
     y = _dsection(d, M, "쉽게 말하면", y, acc)
-    y = _para(d, simple, _kf(False, 38), M, y, W-2*M, _DBODY) + 8
+    y = _para(d, simple, _kf(False, 39), M, y, W-2*M, _DBODY) + 8
     inner = W-2*M-88
     wh = _para_h(d, why, _kf(True, 38), inner, 52)
     box_h = 60 + 44 + wh + 34

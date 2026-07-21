@@ -62,11 +62,17 @@ def post_carousel(ig_user_id: str, access_token: str, image_urls: list, caption:
     """
     child_ids = []
     for url in image_urls:
-        r = requests.post(
-            f"{GRAPH_BASE}/{ig_user_id}/media",
-            data={"image_url": url, "is_carousel_item": "true", "access_token": access_token},
-            timeout=30,
-        ).json()
+        # raw.githubusercontent CDN 전파 지연으로 인한 일시적 fetch 실패에 대비해 재시도
+        r = {}
+        for attempt in range(4):
+            r = requests.post(
+                f"{GRAPH_BASE}/{ig_user_id}/media",
+                data={"image_url": url, "is_carousel_item": "true", "access_token": access_token},
+                timeout=30,
+            ).json()
+            if "id" in r:
+                break
+            time.sleep(8)   # 전파 대기 후 재시도
         if "id" not in r:
             return {"success": False, "post_id": None, "error": f"자식 컨테이너 실패: {r}"}
         child_ids.append(r["id"])
