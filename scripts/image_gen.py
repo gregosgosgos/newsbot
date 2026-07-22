@@ -375,33 +375,68 @@ def _dbase(category_id, glow_x):
     base = _glow(_bg(_DBG_T, _DBG_M, _DBG_B), glow_x, 30, 800, _lighten(cat_color, 0.05), .22)
     return cat_color, acc, base.convert("RGBA")
 
-def render_p1(category_id, cat_name, idx, npages, headline, lead, key_stat, out_path):
-    """핵심 — 헤드라인 + 키 스탯(큰 숫자) + 무슨 일이 있었나."""
+def _photo_band(img, box, photo_path):
+    """기사 대표 이미지를 라운드 밴드로 커버-핏 배치."""
+    x0, y0, x1, y1 = [int(v) for v in box]; tw, th = x1-x0, y1-y0
+    try:
+        ph = Image.open(photo_path).convert("RGB")
+    except Exception:
+        return False
+    sr = ph.width / max(1, ph.height); dr = tw / th
+    if sr > dr:
+        nh = th; nw = max(tw, int(round(th*sr)))
+    else:
+        nw = tw; nh = max(th, int(round(tw/sr)))
+    ph = ph.resize((nw, nh), Image.LANCZOS)
+    ox, oy = (nw-tw)//2, (nh-th)//2
+    ph = ph.crop((ox, oy, ox+tw, oy+th)).convert("RGBA")
+    mask = Image.new("L", (tw, th), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, tw-1, th-1], radius=24, fill=255)
+    img.paste(ph, (x0, y0), mask)
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(ov).rounded_rectangle(box, radius=24, outline=(255, 255, 255, 55), width=2)
+    img.alpha_composite(ov)
+    return True
+
+def render_p1(category_id, cat_name, idx, npages, headline, key_stat, photo, lead, out_path):
+    """핵심(비주얼 히어로) — 기사 사진 + 헤드라인 + 키 스탯. 사진이 없으면 리드로 지면을 채운다."""
     cat_color, acc, img = _dbase(category_id, 150)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
     _eyebrow(img, d, M, acc, cat_name, idx, 1, npages)
-    y = 158; HF = _kf(True, 62); last_w = 0
+    has_photo = bool(photo) and os.path.exists(photo) and _photo_band(img, [M, 150, W-M, 620], photo)
+    d = ImageDraw.Draw(img)
+    y = 666 if has_photo else 236
+    HF = _kf(True, 60); last_w = 0
     for ln in _wrap_words(d, headline, HF, W-2*M):
         _draw_hl(d, ln, HF, M, y, (255, 255, 255), acc)
-        last_w = int(d.textlength(ln, font=HF)); y += int(62*1.25)
-    y += 8; d.rounded_rectangle([M, y, M+last_w, y+7], radius=4, fill=acc); y += 62
+        last_w = int(d.textlength(ln, font=HF)); y += int(60*1.25)
+    y += 8; d.rounded_rectangle([M, y, M+last_w, y+7], radius=4, fill=acc); y += 56
     if key_stat and key_stat.get("value"):
-        d.text((M, y), str(key_stat["value"]), font=_kf(True, 96), fill=acc); y += 118
-        d.text((M, y), str(key_stat.get("label", "")), font=_kf(False, 32), fill=(160, 182, 218)); y += 80
-        d.line([(M, y), (W-M, y)], fill=(46, 64, 98), width=2); y += 50
-    y = _section(d, M, "무슨 일이 있었나", y, acc)
-    _para_hl(d, lead, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60)
+        if has_photo:   # 컴팩트: 숫자 + 라벨 나란히
+            SF = _kf(True, 66); d.text((M, y), str(key_stat["value"]), font=SF, fill=acc)
+            vw = int(d.textlength(str(key_stat["value"]), font=SF))
+            d.text((M+vw+26, y+24), str(key_stat.get("label", "")), font=_kf(False, 30), fill=(160, 182, 218)); y += 118
+        else:           # 히어로: 큰 숫자 + 라벨
+            d.text((M, y), str(key_stat["value"]), font=_kf(True, 100), fill=acc)
+            d.text((M, y+124), str(key_stat.get("label", "")), font=_kf(False, 32), fill=(160, 182, 218)); y += 210
+    if not has_photo and lead:   # 사진이 없으면 리드로 채워 빈 카드 방지
+        y += 24
+        y = _section(d, M, "무슨 일이 있었나", y, acc)
+        _para_hl(d, lead, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60)
     _dfoot(d, M, handle, "자세히 →")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=92)
     return out_path
 
-def render_p2(category_id, cat_name, idx, npages, facts, background, out_path):
-    """팩트 & 배경 — 번호 붙은 핵심 팩트 + 배경 설명."""
+def render_p2(category_id, cat_name, idx, npages, lead, facts, out_path):
+    """무슨 일 & 핵심 팩트."""
     cat_color, acc, img = _dbase(category_id, 930)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
     _eyebrow(img, d, M, acc, cat_name, idx, 2, npages)
-    y = 172
+    y = 176
+    if lead:   # 사진이 있어 P1에서 리드를 못 보인 경우에만 여기서 표시
+        y = _section(d, M, "무슨 일이 있었나", y, acc)
+        y = _para_hl(d, lead, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60) + 54
     y = _section(d, M, "핵심 팩트", y, acc)
     flist = facts[:3]
     for k, f in enumerate(flist, 1):
@@ -410,34 +445,26 @@ def render_p2(category_id, cat_name, idx, npages, facts, background, out_path):
         y = yy + 14
         if k < len(flist):
             d.line([(M, y), (W-M, y)], fill=(40, 56, 88), width=1); y += 28
-    y += 46
-    y = _section(d, M, "배경", y, acc)
-    _para_hl(d, background, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60)
-    _dfoot(d, M, handle, "왜 중요한지 →")
+    _dfoot(d, M, handle, "배경·의미 →")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=92)
     return out_path
 
-def render_p3(category_id, cat_name, idx, npages, simple, why, is_last, out_path):
-    """쉽게 & 관전 포인트 — 쉬운 풀이 + 💡 힌트 (콘텐츠 세로 중앙 정렬)."""
+def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_last, out_path):
+    """배경 & 쉽게 말하면 & 💡 관전 포인트."""
     cat_color, acc, img = _dbase(category_id, 150)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
     _eyebrow(img, d, M, acc, cat_name, idx, 3, npages)
-    SF = _kf(False, 40); SLH = 60
-    slines = _wrap_balanced(d, simple, SF, W-2*M)
+    y = 176
+    y = _section(d, M, "배경", y, acc)
+    y = _para_hl(d, background, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60) + 50
+    y = _section(d, M, "쉽게 말하면", y, acc)
+    _para_hl(d, simple, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60)
+    # 💡 관전 포인트 — 하단 고정 pull-quote (최대 3줄)
     HW = _kf(True, 34); LHW = 46; txt_x = M+96; txt_maxw = (W-M) - txt_x
     wlines = _wrap_balanced(d, why, HW, txt_maxw)[:3]
-    pad_t, pad_b = 30, 26; box_h = pad_t + len(wlines)*LHW + pad_b
-    block_h = 60 + len(slines)*SLH + 56 + box_h
-    top_area, bot_area = 176, H - 150
-    y = top_area + max(0, ((bot_area - top_area) - block_h) // 2)
-    # 쉽게 말하면
-    y = _section(d, M, "쉽게 말하면", y, acc)
-    for ln in slines:
-        _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
-    y += 56
-    # 💡 관전 포인트 pull-quote
-    by = y
+    pad_t = 30; box_h = pad_t + len(wlines)*LHW + 26
+    by = H - 140 - box_h
     _glass(img, [M, by, W-M, by+box_h], radius=24, alpha=52)
     _fa_icon(img, FA_G["lightbulb"], M+46, by+box_h//2, 44, acc)
     d = ImageDraw.Draw(img)
@@ -462,15 +489,18 @@ def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, pre
     total = len(items)
     slide = 0
     for i, it in enumerate(items, 1):
+        photo = it.get("photo", "")
+        has_photo = bool(photo) and os.path.exists(photo)
+        lead = it.get("lead", "")
         slide += 1; p = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
-        render_p1(category_id, cat_name, i, 3, it["headline"], it.get("lead", ""),
-                  it.get("key_stat") or {}, p); paths.append(p)
+        render_p1(category_id, cat_name, i, 3, it["headline"],
+                  it.get("key_stat") or {}, photo, lead, p); paths.append(p)
         slide += 1; p = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
-        render_p2(category_id, cat_name, i, 3, it.get("facts", []),
-                  it.get("background", ""), p); paths.append(p)
+        render_p2(category_id, cat_name, i, 3, lead if has_photo else "",
+                  it.get("facts", []), p); paths.append(p)
         slide += 1; p = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
-        render_p3(category_id, cat_name, i, 3, it.get("simple", ""),
-                  it.get("why", ""), i == total, p); paths.append(p)
+        render_p3(category_id, cat_name, i, 3, it.get("background", ""),
+                  it.get("simple", ""), it.get("why", ""), i == total, p); paths.append(p)
     return paths
 
 
@@ -490,7 +520,8 @@ if __name__ == "__main__":
          "background": "EU는 지난해부터 디지털서비스법(DSA)으로 대형 플랫폼에 불법·위험 상품을 빠르게 제거할 의무를 지우고 있습니다. 유럽 이용자가 많은 알리는 핵심 감시 대상이었습니다.",
          "simple": "가짜·위험한 물건 방치를 이유로 판매자가 아닌 '판을 깔아준' 플랫폼이 직접 벌금을 문 첫 사례급 사건입니다. 앞으로 대형 플랫폼은 상품 검수 책임에서 더 자유롭지 못하게 됩니다.",
          "why": "규제 부담이 국내 플랫폼 정책에도 번질지 눈여겨볼 만합니다.",
-         "key_stat": {"value": "9,314억 원", "label": "EU가 알리에 부과한 과징금"}, "source": "news.example.com"},
+         "key_stat": {"value": "9,314억 원", "label": "EU가 알리에 부과한 과징금"},
+         "photo": "tmpimg/_test_photo.jpg", "source": "news.example.com"},
         {"headline": "쿠팡, 로켓배송 입점 기준 강화", "subtitle": "기준 강화",
          "lead": "쿠팡이 로켓배송 신규 입점 심사 기준을 강화한다고 밝혔습니다. 품질과 배송 지표가 미달하면 노출이 제한되고 기존 셀러도 재평가 대상에 포함됩니다.",
          "facts": ["신규 입점 심사 항목 확대", "지표 미달 시 노출 제한", "기존 셀러도 재평가 대상"],

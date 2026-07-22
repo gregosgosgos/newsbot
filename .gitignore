@@ -7,5 +7,7 @@ dryrun_log.txt
 git_push_log.txt
 # output/*.jpg 는 gitignore하되, 파이프라인이 실게시 때 git add -f 로 강제 추가함
 output/*.jpg
+# 기사 원문에서 내려받은 raw 대표사진 — 절대 커밋 금지(렌더된 output/ 카드만 공개)
+tmpimg/
 assets/fonts/Poppins-Bold.ttf
 assets/hero_ecommerce_clean.png

@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 
 from config import CATEGORIES, NEWS_PER_CATEGORY, CATEGORY_HOOK, DEFAULT_HOOK
 from accounts import get_account_credentials, list_active_categories
-from scripts.naver_news import collect_category_news, fetch_article_text
+from scripts.naver_news import collect_category_news, fetch_article, download_image
 from scripts.rewriter import rewrite_news
 from scripts.image_gen import generate_carousel
 from scripts.instagram_poster import post_carousel, build_carousel_caption
@@ -71,12 +71,13 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
             break
         examined += 1
         try:
-            body = fetch_article_text(item.get("link", ""))
+            body, img_url = fetch_article(item.get("link", ""))
             content = rewrite_news(item["title"], item["description"], body, cat_name)
             if content.get("is_promotional"):
                 result["errors"].append(f"[스킵] 광고/홍보성: {item['title']}"); continue
             if content.get("is_factual_risk"):
                 result["errors"].append(f"[스킵] 팩트 리스크: {content.get('headline')}"); continue
+            photo = download_image(img_url, os.path.join("tmpimg", f"{category_id}_{examined}.jpg"))
             items.append({
                 "headline": content.get("headline", ""),
                 "subtitle": content.get("subtitle", ""),
@@ -86,6 +87,7 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
                 "background": content.get("background", ""),
                 "simple": content.get("simple", ""),
                 "why": content.get("why", ""),
+                "photo": photo,
                 "source": item.get("link", ""),
             })
         except Exception as e:

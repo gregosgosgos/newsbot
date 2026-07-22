@@ -53,29 +53,38 @@ def search_news(query: str, display: int = None, sort: str = "date") -> list:
     return results
 
 
-def _norm_title(t: str) -> str:
+_STOP = {"뉴스", "속보", "종합", "단독", "오늘", "관련", "기자", "사진"}
+
+def _title_key(t: str) -> str:
     return re.sub(r"[^0-9A-Za-z가-힣]", "", t).lower()
 
-def _is_duplicate(norm: str, kept: list, thresh: float = 0.55) -> bool:
-    """이미 채택된 제목들과 유사하면 True (같은 사건 다른 기사 제거)."""
-    for k in kept:
-        if not norm or not k:
-            continue
-        if difflib.SequenceMatcher(None, norm, k).ratio() >= thresh:
+def _title_tokens(t: str) -> set:
+    return {w.lower() for w in re.split(r"[^0-9A-Za-z가-힣]+", t)
+            if len(w) >= 2 and w.lower() not in _STOP}
+
+
+def _similar(a: str, b: str) -> bool:
+    """두 기사 제목이 같은 사건인지 판단 (글자 유사도 + 핵심 명사 겹침).
+
+    표현이 달라도 핵심 명사가 겹치면 같은 사건으로 본다.
+    예: '유통가 상생 바람…' 과 '유통가 상생 빛났다…' → 같은 사건.
+    """
+    ka, kb = _title_key(a), _title_key(b)
+    if not ka or not kb:
+        return False
+    if difflib.SequenceMatcher(None, ka, kb).ratio() >= 0.5:
+        return True
+    short, long = sorted([ka, kb], key=len)
+    if len(short) >= 8 and short in long:
+        return True
+    ta, tb = _title_tokens(a), _title_tokens(b)
+    if ta and tb:
+        inter = ta & tb
+        if len(inter) / len(ta | tb) >= 0.4:                       # 토큰 자카드
             return True
-        short, long = sorted([norm, k], key=len)
-        if len(short) >= 8 and short in long:   # 한쪽이 다른쪽에 크게 포함
+        if len(inter) >= 2 and any(len(w) >= 3 for w in inter):    # 핵심어 2개 이상 겹침(하나는 3자+)
             return True
     return False
-
-
-def _similar(a: str, b: str, thresh: float = 0.55) -> bool:
-    if not a or not b:
-        return False
-    if difflib.SequenceMatcher(None, a, b).ratio() >= thresh:
-        return True
-    short, long = sorted([a, b], key=len)
-    return len(short) >= 8 and short in long
 
 
 def collect_category_news(keywords: list, hours_window: int = 20) -> list:
@@ -107,16 +116,16 @@ def collect_category_news(keywords: list, hours_window: int = 20) -> list:
 
     # 최신순으로 훑으며 유사 제목끼리 클러스터링 (대표 = 클러스터 내 최신 기사)
     pool.sort(key=lambda x: _parse_pubdate(x["pubdate"]), reverse=True)
-    clusters = []  # {"norm", "items": [...], "keywords": set}
+    clusters = []  # {"title", "items": [...], "keywords": set}
     for it in pool:
-        n = _norm_title(it["title"])
         for c in clusters:
-            if _similar(n, c["norm"]):
+            if _similar(it["title"], c["title"]):
                 c["items"].append(it)
                 c["keywords"].add(it["matched_keyword"])
                 break
         else:
-            clusters.append({"norm": n, "items": [it], "keywords": {it["matched_keyword"]}})
+            clusters.append({"title": it["title"], "items": [it],
+                             "keywords": {it["matched_keyword"]}})
 
     # 화제성 점수: 보도량(클러스터 크기) > 키워드 다양성 > 최신성
     clusters.sort(
@@ -132,19 +141,51 @@ def collect_category_news(keywords: list, hours_window: int = 20) -> list:
     return result
 
 
-def fetch_article_text(url: str, max_chars: int = 2500) -> str:
-    """기사 원문 링크에서 본문 텍스트 추출 (trafilatura). 실패 시 빈 문자열."""
+_OG_RE = re.compile(
+    r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', re.I)
+_OG_RE2 = re.compile(
+    r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', re.I)
+
+
+def fetch_article(url: str, max_chars: int = 2500):
+    """기사 원문에서 (본문 텍스트, 대표이미지 URL) 을 한 번의 요청으로 추출."""
     try:
         import trafilatura
-        downloaded = trafilatura.fetch_url(url)
-        if not downloaded:
-            return ""
-        txt = trafilatura.extract(downloaded, include_comments=False,
-                                  include_tables=False, favor_precision=True) or ""
-        return txt.strip()[:max_chars]
+        html = trafilatura.fetch_url(url)
+        if not html:
+            return "", ""
+        body = (trafilatura.extract(html, include_comments=False,
+                                    include_tables=False, favor_precision=True) or "").strip()[:max_chars]
+        m = _OG_RE.search(html) or _OG_RE2.search(html)
+        img = m.group(1).strip() if m else ""
+        if img.startswith("//"):
+            img = "https:" + img
+        return body, img
     except Exception as e:
-        print(f"[WARN] 본문 추출 실패 {url}: {e}")
+        print(f"[WARN] 기사 fetch 실패 {url}: {e}")
+        return "", ""
+
+
+def fetch_article_text(url: str, max_chars: int = 2500) -> str:
+    return fetch_article(url, max_chars)[0]
+
+
+def download_image(url: str, dest: str) -> str:
+    """대표 이미지를 내려받아 dest에 저장. 성공 시 dest, 실패 시 ''."""
+    if not url:
         return ""
+    try:
+        import os
+        r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        ctype = r.headers.get("content-type", "")
+        if r.status_code == 200 and ctype.startswith("image") and len(r.content) > 3000:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "wb") as f:
+                f.write(r.content)
+            return dest
+    except Exception as e:
+        print(f"[WARN] 이미지 다운로드 실패 {url}: {e}")
+    return ""
 
 
 if __name__ == "__main__":
