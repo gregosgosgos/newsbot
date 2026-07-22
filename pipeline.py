@@ -80,6 +80,7 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
             items.append({
                 "headline": content.get("headline", ""),
                 "subtitle": content.get("subtitle", ""),
+                "key_stat": content.get("key_stat") or {},
                 "lead": content.get("lead", ""),
                 "facts": content.get("facts", []),
                 "background": content.get("background", ""),

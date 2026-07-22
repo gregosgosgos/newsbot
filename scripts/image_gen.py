@@ -328,61 +328,124 @@ def _para(d, text, font, x, y, maxw, fill, lh=_DLH):
 def _para_h(d, text, font, maxw, lh=_DLH):
     return len(_wrap_balanced(d, text, font, maxw)) * lh
 
-def _dhead(img, d, M, acc, cat_color, date, idx, page):
-    d.text((M, 92), f"NEWS {idx}   ·   {page} / 2", font=_nf(32), fill=acc)
-    d.text((W-M, 96), date, font=_kf(False, 30), fill=(140, 160, 205), anchor="rm")
+def _dots(d, x_right, cy, n, cur, acc):
+    r = 6; gap = 24
+    for i in range(n):
+        cx = x_right - (n - 1 - i) * gap
+        d.ellipse([cx-r, cy-r, cx+r, cy+r], fill=acc if i == cur else (66, 86, 126))
 
-def _dsection(d, M, label, y, acc):
-    d.text((M, y), label, font=_kf(True, 34), fill=acc); return y + 60
+def _eyebrow(img, d, M, acc, cat_name, idx, page, npages):
+    d.ellipse([M, 90, M+15, 105], fill=acc)
+    d.text((M+30, 82), f"{cat_name}   ·   NEWS {idx}", font=_kf(True, 27), fill=(150, 172, 212))
+    _dots(d, W-M, 98, npages, page-1, acc)
 
-def _dfooter(d, M, handle, tail):
-    d.line([(M, H-104), (W-M, H-104)], fill=(70, 95, 150), width=2)
-    d.text((M, H-58), handle, font=_kf(True, 34), fill=(150, 178, 255), anchor="lm")
-    d.text((W-M, H-58), tail, font=_kf(False, 28), fill=(120, 140, 180), anchor="rm")
+def _section(d, M, label, y, acc):
+    d.rounded_rectangle([M, y+3, M+7, y+35], radius=3, fill=acc)
+    d.text((M+26, y), label, font=_kf(True, 33), fill=acc)
+    return y + 60
 
-def render_explainer_1(category_id, date_str, idx, headline, lead, facts, source, out_path):
+_HL_RE = re.compile(r"[0-9][0-9,\.]*\s*(?:억|만|천|조|원|달러|%|퍼센트|명|배|건|개|가지|톤|kg|위|차|년|월|일)")
+
+def _draw_hl(d, line, font, x, y, base, acc):
+    """본문 한 줄에서 수치 토큰만 강조색으로 그린다 (에디토리얼 하이라이트)."""
+    i = 0
+    for m in _HL_RE.finditer(line):
+        pre = line[i:m.start()]
+        if pre:
+            d.text((x, y), pre, font=font, fill=base); x += d.textlength(pre, font=font)
+        seg = m.group()
+        d.text((x, y), seg, font=font, fill=acc); x += d.textlength(seg, font=font)
+        i = m.end()
+    if i < len(line):
+        d.text((x, y), line[i:], font=font, fill=base)
+
+def _para_hl(d, text, font, x, y, maxw, base, acc, lh=_DLH):
+    for ln in _wrap_balanced(d, text, font, maxw):
+        _draw_hl(d, ln, font, x, y, base, acc); y += lh
+    return y
+
+def _dfoot(d, M, handle, tail):
+    d.line([(M, H-104), (W-M, H-104)], fill=(58, 78, 118), width=2)
+    d.text((M, H-58), handle, font=_kf(True, 32), fill=(150, 178, 255), anchor="lm")
+    d.text((W-M, H-58), tail, font=_kf(False, 27), fill=(120, 140, 180), anchor="rm")
+
+def _dbase(category_id, glow_x):
     cat_color = _palette(CATEGORY_COLORS.get(category_id, "#3f7bff"))[0]
-    acc = _lighten(cat_color, 0.42); handle = CATEGORY_HANDLE.get(category_id, "@news")
-    base = _glow(_bg(_DBG_T, _DBG_M, _DBG_B), 150, 40, 760, _lighten(cat_color, 0.05), .26)
-    img = base.convert("RGBA"); d = ImageDraw.Draw(img); M = 88
-    _dhead(img, d, M, acc, cat_color, date_str, idx, 1)
-    y = 168; HF = _kf(True, 64)
+    acc = _lighten(cat_color, 0.42)
+    base = _glow(_bg(_DBG_T, _DBG_M, _DBG_B), glow_x, 30, 800, _lighten(cat_color, 0.05), .22)
+    return cat_color, acc, base.convert("RGBA")
+
+def render_p1(category_id, cat_name, idx, npages, headline, lead, key_stat, out_path):
+    """핵심 — 헤드라인 + 키 스탯(큰 숫자) + 무슨 일이 있었나."""
+    cat_color, acc, img = _dbase(category_id, 150)
+    d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
+    _eyebrow(img, d, M, acc, cat_name, idx, 1, npages)
+    y = 158; HF = _kf(True, 62); last_w = 0
     for ln in _wrap_words(d, headline, HF, W-2*M):
-        d.text((M, y), ln, font=HF, fill=(255, 255, 255)); y += int(64*1.24)
-    y += 8; d.rounded_rectangle([M, y, M+120, y+9], radius=4, fill=acc); y += 72
-    y = _dsection(d, M, "무슨 일이 있었나", y, acc)
-    y = _para(d, lead, _kf(False, 39), M, y, W-2*M, _DBODY) + 54
-    y = _dsection(d, M, "핵심 팩트", y, acc)
-    for f in facts[:3]:
-        d.ellipse([M, y+16, M+18, y+16+18], fill=acc)
-        y = _para(d, f, _kf(True, 37), M+48, y, W-M-48-M, (240, 244, 255), 52) + 24
-    _dfooter(d, M, handle, "왜 중요한지 다음 장 →")
+        _draw_hl(d, ln, HF, M, y, (255, 255, 255), acc)
+        last_w = int(d.textlength(ln, font=HF)); y += int(62*1.25)
+    y += 8; d.rounded_rectangle([M, y, M+last_w, y+7], radius=4, fill=acc); y += 62
+    if key_stat and key_stat.get("value"):
+        d.text((M, y), str(key_stat["value"]), font=_kf(True, 96), fill=acc); y += 118
+        d.text((M, y), str(key_stat.get("label", "")), font=_kf(False, 32), fill=(160, 182, 218)); y += 80
+        d.line([(M, y), (W-M, y)], fill=(46, 64, 98), width=2); y += 50
+    y = _section(d, M, "무슨 일이 있었나", y, acc)
+    _para_hl(d, lead, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60)
+    _dfoot(d, M, handle, "자세히 →")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=92)
     return out_path
 
-def render_explainer_2(category_id, date_str, idx, headline, background, simple, why,
-                       is_last, out_path):
-    cat_color = _palette(CATEGORY_COLORS.get(category_id, "#3f7bff"))[0]
-    acc = _lighten(cat_color, 0.42); handle = CATEGORY_HANDLE.get(category_id, "@news")
-    base = _glow(_bg(_DBG_T, _DBG_M, _DBG_B), 930, 40, 720, _lighten(cat_color, 0.05), .24)
-    img = base.convert("RGBA"); d = ImageDraw.Draw(img); M = 88
-    _dhead(img, d, M, acc, cat_color, date_str, idx, 2)
-    y = 230
-    y = _dsection(d, M, "배경", y, acc)
-    y = _para(d, background, _kf(False, 39), M, y, W-2*M, _DBODY) + 60
-    y = _dsection(d, M, "쉽게 말하면", y, acc)
-    y = _para(d, simple, _kf(False, 39), M, y, W-2*M, _DBODY) + 8
-    inner = W-2*M-88
-    wh = _para_h(d, why, _kf(True, 38), inner, 52)
-    box_h = 56 + wh + 40
-    by = H - 150 - box_h
-    _glass(img, [M, by, W-M, by+box_h], radius=26, alpha=52)
-    _fa_icon(img, FA_G["lightbulb"], M+44+20, by+50, 52, acc)   # 💡 아이콘 라벨
+def render_p2(category_id, cat_name, idx, npages, facts, background, out_path):
+    """팩트 & 배경 — 번호 붙은 핵심 팩트 + 배경 설명."""
+    cat_color, acc, img = _dbase(category_id, 930)
+    d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
+    _eyebrow(img, d, M, acc, cat_name, idx, 2, npages)
+    y = 172
+    y = _section(d, M, "핵심 팩트", y, acc)
+    flist = facts[:3]
+    for k, f in enumerate(flist, 1):
+        d.text((M, y+1), f"{k:02d}", font=_nf(34), fill=acc)
+        yy = _para_hl(d, f, _kf(True, 38), M+74, y, W-M-74-M, (240, 244, 255), acc, 50)
+        y = yy + 14
+        if k < len(flist):
+            d.line([(M, y), (W-M, y)], fill=(40, 56, 88), width=1); y += 28
+    y += 46
+    y = _section(d, M, "배경", y, acc)
+    _para_hl(d, background, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60)
+    _dfoot(d, M, handle, "왜 중요한지 →")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    img.convert("RGB").save(out_path, "JPEG", quality=92)
+    return out_path
+
+def render_p3(category_id, cat_name, idx, npages, simple, why, is_last, out_path):
+    """쉽게 & 관전 포인트 — 쉬운 풀이 + 💡 힌트 (콘텐츠 세로 중앙 정렬)."""
+    cat_color, acc, img = _dbase(category_id, 150)
+    d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
+    _eyebrow(img, d, M, acc, cat_name, idx, 3, npages)
+    SF = _kf(False, 40); SLH = 60
+    slines = _wrap_balanced(d, simple, SF, W-2*M)
+    HW = _kf(True, 34); LHW = 46; txt_x = M+96; txt_maxw = (W-M) - txt_x
+    wlines = _wrap_balanced(d, why, HW, txt_maxw)[:3]
+    pad_t, pad_b = 30, 26; box_h = pad_t + len(wlines)*LHW + pad_b
+    block_h = 60 + len(slines)*SLH + 56 + box_h
+    top_area, bot_area = 176, H - 150
+    y = top_area + max(0, ((bot_area - top_area) - block_h) // 2)
+    # 쉽게 말하면
+    y = _section(d, M, "쉽게 말하면", y, acc)
+    for ln in slines:
+        _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
+    y += 56
+    # 💡 관전 포인트 pull-quote
+    by = y
+    _glass(img, [M, by, W-M, by+box_h], radius=24, alpha=52)
+    _fa_icon(img, FA_G["lightbulb"], M+46, by+box_h//2, 44, acc)
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([M, by, M+12, by+box_h], radius=6, fill=acc)
-    _para(d, why, _kf(True, 38), M+96, by+22, inner-52, (245, 248, 255), 52)
-    _dfooter(d, M, handle, "팔로우하고 매일 받아보기" if is_last else "다음 뉴스 →")
+    ty = by + pad_t
+    for ln in wlines:
+        d.text((txt_x, ty), ln, font=HW, fill=(245, 248, 255)); ty += LHW
+    _dfoot(d, M, handle, "팔로우하고 매일 받아보기" if is_last else "다음 뉴스 →")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=92)
     return out_path
@@ -399,17 +462,15 @@ def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, pre
     total = len(items)
     slide = 0
     for i, it in enumerate(items, 1):
-        slide += 1
-        p1 = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
-        render_explainer_1(category_id, date_str, i, it["headline"],
-                           it.get("lead", ""), it.get("facts", []), it.get("source", ""), p1)
-        paths.append(p1)
-        slide += 1
-        p2 = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
-        render_explainer_2(category_id, date_str, i, it["headline"],
-                           it.get("background", ""), it.get("simple", ""),
-                           it.get("why", ""), i == total, p2)
-        paths.append(p2)
+        slide += 1; p = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
+        render_p1(category_id, cat_name, i, 3, it["headline"], it.get("lead", ""),
+                  it.get("key_stat") or {}, p); paths.append(p)
+        slide += 1; p = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
+        render_p2(category_id, cat_name, i, 3, it.get("facts", []),
+                  it.get("background", ""), p); paths.append(p)
+        slide += 1; p = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
+        render_p3(category_id, cat_name, i, 3, it.get("simple", ""),
+                  it.get("why", ""), i == total, p); paths.append(p)
     return paths
 
 
@@ -427,8 +488,9 @@ if __name__ == "__main__":
          "lead": "EU 집행위원회가 중국 이커머스 플랫폼 알리익스프레스에 약 9,314억 원의 과징금을 부과했습니다. 위조품과 안전 기준을 못 맞춘 위험 상품이 계속 팔렸는데 이를 제대로 걸러내지 못했다는 이유입니다.",
          "facts": ["과징금 규모: 약 9,314억 원", "제재 주체: EU 집행위원회", "사유: 위험 상품 차단 의무 위반"],
          "background": "EU는 지난해부터 디지털서비스법(DSA)으로 대형 플랫폼에 불법·위험 상품을 빠르게 제거할 의무를 지우고 있습니다. 유럽 이용자가 많은 알리는 핵심 감시 대상이었습니다.",
-         "simple": "가짜·위험한 물건 방치를 이유로 판매자가 아닌 플랫폼이 직접 벌금을 문 첫 사례급 사건입니다.",
-         "why": "국내 셀러도 가격 경쟁과 해외 소싱 전략을 다시 볼 시점입니다.", "source": "news.example.com"},
+         "simple": "가짜·위험한 물건 방치를 이유로 판매자가 아닌 '판을 깔아준' 플랫폼이 직접 벌금을 문 첫 사례급 사건입니다. 앞으로 대형 플랫폼은 상품 검수 책임에서 더 자유롭지 못하게 됩니다.",
+         "why": "규제 부담이 국내 플랫폼 정책에도 번질지 눈여겨볼 만합니다.",
+         "key_stat": {"value": "9,314억 원", "label": "EU가 알리에 부과한 과징금"}, "source": "news.example.com"},
         {"headline": "쿠팡, 로켓배송 입점 기준 강화", "subtitle": "기준 강화",
          "lead": "쿠팡이 로켓배송 신규 입점 심사 기준을 강화한다고 밝혔습니다. 품질과 배송 지표가 미달하면 노출이 제한되고 기존 셀러도 재평가 대상에 포함됩니다.",
          "facts": ["신규 입점 심사 항목 확대", "지표 미달 시 노출 제한", "기존 셀러도 재평가 대상"],
