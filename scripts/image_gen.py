@@ -376,7 +376,11 @@ def _dbase(category_id, glow_x):
     return cat_color, acc, base.convert("RGBA")
 
 def _photo_band(img, box, photo_path):
-    """기사 대표 이미지를 라운드 밴드로 커버-핏 배치."""
+    """기사 대표 이미지를 라운드 밴드로 커버-핏 배치.
+
+    밝은/흰 배경 이미지가 어두운 카드에서 튀지 않도록 살짝 톤다운 + 하단 스크림 +
+    테두리 + '관련 이미지' 태그를 얹어 의도된 프레임처럼 보이게 한다.
+    """
     x0, y0, x1, y1 = [int(v) for v in box]; tw, th = x1-x0, y1-y0
     try:
         ph = Image.open(photo_path).convert("RGB")
@@ -389,87 +393,128 @@ def _photo_band(img, box, photo_path):
         nw = tw; nh = max(th, int(round(tw/sr)))
     ph = ph.resize((nw, nh), Image.LANCZOS)
     ox, oy = (nw-tw)//2, (nh-th)//2
-    ph = ph.crop((ox, oy, ox+tw, oy+th)).convert("RGBA")
+    ph = ph.crop((ox, oy, ox+tw, oy+th))
+    ph = Image.blend(ph, Image.new("RGB", (tw, th), (11, 18, 32)), 0.12)  # 톤다운
+    # 하단 스크림(아래쪽으로 갈수록 카드 배경에 자연스럽게 녹아들게)
+    arr = np.asarray(ph).astype(np.float32)
+    yy = np.linspace(0, 1, th)[:, None, None]
+    a = np.clip((yy - 0.5) / 0.5, 0, 1) ** 1.4 * 0.72
+    arr = arr * (1 - a) + np.array([9, 14, 26], np.float32) * a
+    ph = Image.fromarray(arr.astype(np.uint8)).convert("RGBA")
     mask = Image.new("L", (tw, th), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, tw-1, th-1], radius=24, fill=255)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, tw-1, th-1], radius=22, fill=255)
     img.paste(ph, (x0, y0), mask)
     ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(ov).rounded_rectangle(box, radius=24, outline=(255, 255, 255, 55), width=2)
+    ImageDraw.Draw(ov).rounded_rectangle(box, radius=22, outline=(255, 255, 255, 48), width=2)
     img.alpha_composite(ov)
+    # '관련 이미지' 태그(좌하단)
+    d = ImageDraw.Draw(img); tf = _kf(True, 22); tag = "관련 이미지"
+    tgw = int(d.textlength(tag, font=tf)); px, py = x0 + 22, y1 - 50
+    _glass(img, [px, py, px + tgw + 34, py + 36], radius=18, alpha=64)
+    ImageDraw.Draw(img).text((px + 17, py + 7), tag, font=_kf(True, 22), fill=(224, 232, 246))
     return True
 
-def render_p1(category_id, cat_name, idx, npages, headline, key_stat, photo, lead, out_path):
-    """핵심(비주얼 히어로) — 기사 사진 + 헤드라인 + 키 스탯. 사진이 없으면 리드로 지면을 채운다."""
+def render_p1(category_id, cat_name, idx, npages, headline, lead, key_stat, photo, out_path):
+    """1면 — 사진 + 헤드라인 + 리드(standfirst). 사진이 없으면 헤드라인+수치+리드로 지면을 채운다."""
     cat_color, acc, img = _dbase(category_id, 150)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
     _eyebrow(img, d, M, acc, cat_name, idx, 1, npages)
-    has_photo = bool(photo) and os.path.exists(photo) and _photo_band(img, [M, 150, W-M, 620], photo)
+    has_photo = bool(photo) and os.path.exists(photo) and _photo_band(img, [M, 150, W-M, 540], photo)
     d = ImageDraw.Draw(img)
-    y = 666 if has_photo else 236
-    HF = _kf(True, 60); last_w = 0
-    for ln in _wrap_words(d, headline, HF, W-2*M):
+    HF = _kf(True, 60); HLH = int(60*1.28); LF = _kf(False, 40); LLH = 64
+    hl_lines = _wrap_words(d, headline, HF, W-2*M)
+    lead_lines = _wrap_balanced(d, lead, LF, W-2*M) if lead else []
+    show_stat = (not has_photo) and bool(key_stat) and bool(key_stat.get("value"))
+    if has_photo:
+        y = 602
+    else:   # 사진 없음: 헤드라인+수치+리드 블록을 세로 중앙 정렬 → 여백 고르게
+        block = len(hl_lines)*HLH + 71 + (140 if show_stat else 0) + (6 + len(lead_lines)*LLH if lead else 0)
+        top, bot = 250, H-150
+        y = top + max(0, ((bot-top)-block)//2)
+    last_w = 0
+    for ln in hl_lines:
         _draw_hl(d, ln, HF, M, y, (255, 255, 255), acc)
-        last_w = int(d.textlength(ln, font=HF)); y += int(60*1.25)
-    y += 8; d.rounded_rectangle([M, y, M+last_w, y+7], radius=4, fill=acc); y += 56
-    if key_stat and key_stat.get("value"):
-        if has_photo:   # 컴팩트: 숫자 + 라벨 나란히
-            SF = _kf(True, 66); d.text((M, y), str(key_stat["value"]), font=SF, fill=acc)
-            vw = int(d.textlength(str(key_stat["value"]), font=SF))
-            d.text((M+vw+26, y+24), str(key_stat.get("label", "")), font=_kf(False, 30), fill=(160, 182, 218)); y += 118
-        else:           # 히어로: 큰 숫자 + 라벨
-            d.text((M, y), str(key_stat["value"]), font=_kf(True, 100), fill=acc)
-            d.text((M, y+124), str(key_stat.get("label", "")), font=_kf(False, 32), fill=(160, 182, 218)); y += 210
-    if not has_photo and lead:   # 사진이 없으면 리드로 채워 빈 카드 방지
-        y += 24
-        y = _section(d, M, "무슨 일이 있었나", y, acc)
-        _para_hl(d, lead, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60)
-    _dfoot(d, M, handle, "자세히 →")
+        last_w = int(d.textlength(ln, font=HF)); y += HLH
+    y += 10; d.rounded_rectangle([M, y, M+last_w, y+7], radius=4, fill=acc); y += 54
+    if show_stat:   # 사진 없을 때만 수치 히어로
+        SF = _kf(True, 92); d.text((M, y), str(key_stat["value"]), font=SF, fill=acc)
+        vw = int(d.textlength(str(key_stat["value"]), font=SF))
+        d.text((M+vw+24, y+42), str(key_stat.get("label", "")), font=_kf(False, 30), fill=(162, 184, 220))
+        y += 140
+    if lead:
+        y += 6
+        _para_hl(d, lead, LF, M, y, W-2*M, _DBODY, acc, LLH)
+    _dfoot(d, M, handle, "핵심 짚어보기 →")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=92)
     return out_path
 
-def render_p2(category_id, cat_name, idx, npages, lead, facts, out_path):
-    """무슨 일 & 핵심 팩트."""
+def render_p2(category_id, cat_name, idx, npages, key_stat, facts, background, out_path):
+    """2면 — 핵심 수치(패널) + 핵심 팩트 (+ 사진 없을 땐 배경)."""
     cat_color, acc, img = _dbase(category_id, 930)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
     _eyebrow(img, d, M, acc, cat_name, idx, 2, npages)
-    y = 176
-    if lead:   # 사진이 있어 P1에서 리드를 못 보인 경우에만 여기서 표시
-        y = _section(d, M, "무슨 일이 있었나", y, acc)
-        y = _para_hl(d, lead, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60) + 54
-    y = _section(d, M, "핵심 팩트", y, acc)
+    FF = _kf(True, 38); FLH = 50; fw = W-M-74-M; BF = _kf(False, 40); BLH = 62
     flist = facts[:3]
-    for k, f in enumerate(flist, 1):
+    fact_lines = [_wrap_balanced(d, f, FF, fw) for f in flist]
+    bg_lines = _wrap_balanced(d, background, BF, W-2*M) if background else []
+    has_stat = bool(key_stat) and bool(key_stat.get("value"))
+    if has_stat:   # 수치 히어로 패널(상단 고정)
+        y = 176; ph = 176
+        _glass(img, [M, y, W-M, y+ph], radius=22, alpha=40)
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle([M, y, M+12, y+ph], radius=6, fill=acc)
+        d.text((M+52, y+32), str(key_stat["value"]), font=_kf(True, 80), fill=acc)
+        d.text((M+54, y+130), str(key_stat.get("label", "")), font=_kf(False, 29), fill=(172, 192, 224))
+        y += ph + 48
+    else:   # 수치 패널 없음 → 팩트+배경 블록 세로 중앙 정렬
+        fh = 60 + sum(len(fl)*FLH + 14 + (28 if i < len(fact_lines)-1 else 0)
+                      for i, fl in enumerate(fact_lines))
+        bh = (42 + 60 + len(bg_lines)*BLH) if background else 0
+        top, bot = 200, H-150
+        y = top + max(0, ((bot-top)-(fh+bh))//2)
+    y = _section(d, M, "핵심 팩트", y, acc)
+    for k, fl in enumerate(fact_lines, 1):
         d.text((M, y+1), f"{k:02d}", font=_nf(34), fill=acc)
-        yy = _para_hl(d, f, _kf(True, 38), M+74, y, W-M-74-M, (240, 244, 255), acc, 50)
+        yy = y
+        for ln in fl:
+            _draw_hl(d, ln, FF, M+74, yy, (240, 244, 255), acc); yy += FLH
         y = yy + 14
-        if k < len(flist):
+        if k < len(fact_lines):
             d.line([(M, y), (W-M, y)], fill=(40, 56, 88), width=1); y += 28
-    _dfoot(d, M, handle, "배경·의미 →")
+    if background:
+        y += 42
+        y = _section(d, M, "배경", y, acc)
+        _para_hl(d, background, BF, M, y, W-2*M, _DBODY, acc, BLH)
+    _dfoot(d, M, handle, "쉽게 풀면 →" if background else "배경·의미 →")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=92)
     return out_path
 
-def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_last, out_path):
-    """배경 & 쉽게 말하면 & 💡 관전 포인트."""
+def render_p3(category_id, cat_name, idx, npages, simple, why, is_last, out_path):
+    """3면 — 쉽게 말하면(세로 중앙) + 💡 관전 포인트. 여백을 위아래로 고르게 분배해 의도된 여백으로 보이게 한다."""
     cat_color, acc, img = _dbase(category_id, 150)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
     _eyebrow(img, d, M, acc, cat_name, idx, 3, npages)
-    y = 176
-    y = _section(d, M, "배경", y, acc)
-    y = _para_hl(d, background, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60) + 50
-    y = _section(d, M, "쉽게 말하면", y, acc)
-    _para_hl(d, simple, _kf(False, 40), M, y, W-2*M, _DBODY, acc, 60)
-    # 💡 관전 포인트 — 하단 고정 pull-quote (최대 3줄)
+    # 💡 박스 하단 고정 위치 먼저 계산
     HW = _kf(True, 34); LHW = 46; txt_x = M+96; txt_maxw = (W-M) - txt_x
     wlines = _wrap_balanced(d, why, HW, txt_maxw)[:3]
-    pad_t = 30; box_h = pad_t + len(wlines)*LHW + 26
+    box_h = 30 + len(wlines)*LHW + 26
     by = H - 140 - box_h
+    # 쉽게 말하면 → 상단~💡박스 사이 공간에 세로 중앙 정렬
+    SF = _kf(False, 42); SLH = 66
+    slines = _wrap_balanced(d, simple, SF, W-2*M)
+    block = 60 + len(slines)*SLH
+    top, bot = 210, by - 46
+    y = top + max(0, ((bot - top) - block) // 2)
+    y = _section(d, M, "쉽게 말하면", y, acc)
+    for ln in slines:
+        _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
     _glass(img, [M, by, W-M, by+box_h], radius=24, alpha=52)
     _fa_icon(img, FA_G["lightbulb"], M+46, by+box_h//2, 44, acc)
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([M, by, M+12, by+box_h], radius=6, fill=acc)
-    ty = by + pad_t
+    ty = by + 30
     for ln in wlines:
         d.text((txt_x, ty), ln, font=HW, fill=(245, 248, 255)); ty += LHW
     _dfoot(d, M, handle, "팔로우하고 매일 받아보기" if is_last else "다음 뉴스 →")
@@ -491,16 +536,21 @@ def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, pre
     for i, it in enumerate(items, 1):
         photo = it.get("photo", "")
         has_photo = bool(photo) and os.path.exists(photo)
-        lead = it.get("lead", "")
-        slide += 1; p = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
-        render_p1(category_id, cat_name, i, 3, it["headline"],
-                  it.get("key_stat") or {}, photo, lead, p); paths.append(p)
-        slide += 1; p = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
-        render_p2(category_id, cat_name, i, 3, lead if has_photo else "",
-                  it.get("facts", []), p); paths.append(p)
-        slide += 1; p = os.path.join(out_dir, f"{prefix}_{slide}.jpg")
-        render_p3(category_id, cat_name, i, 3, it.get("background", ""),
-                  it.get("simple", ""), it.get("why", ""), i == total, p); paths.append(p)
+        lead = it.get("lead", ""); ks = it.get("key_stat") or {}
+        facts = it.get("facts", []); bg = it.get("background", "")
+        simple = it.get("simple", ""); why = it.get("why", "")
+        def _p():
+            nonlocal slide
+            slide += 1
+            return os.path.join(out_dir, f"{prefix}_{slide}.jpg")
+        if has_photo:   # 1면 사진+헤드라인+리드 / 2면 수치+팩트+배경 / 3면 쉽게+💡
+            p = _p(); render_p1(category_id, cat_name, i, 3, it["headline"], lead, {}, photo, p); paths.append(p)
+            p = _p(); render_p2(category_id, cat_name, i, 3, ks, facts, bg, p); paths.append(p)
+            p = _p(); render_p3(category_id, cat_name, i, 3, simple, why, i == total, p); paths.append(p)
+        else:           # 사진 없음: 수치→1면, 팩트+배경→2면, 쉽게(중앙)→3면
+            p = _p(); render_p1(category_id, cat_name, i, 3, it["headline"], lead, ks, "", p); paths.append(p)
+            p = _p(); render_p2(category_id, cat_name, i, 3, {}, facts, bg, p); paths.append(p)
+            p = _p(); render_p3(category_id, cat_name, i, 3, simple, why, i == total, p); paths.append(p)
     return paths
 
 
@@ -527,7 +577,8 @@ if __name__ == "__main__":
          "facts": ["신규 입점 심사 항목 확대", "지표 미달 시 노출 제한", "기존 셀러도 재평가 대상"],
          "background": "쿠팡은 로켓배송 상품 수가 급증하면서 품질 관리 부담이 커졌습니다. 소비자 신뢰 유지를 위해 입점 문턱을 높이는 흐름입니다.",
          "simple": "이제 로켓배송에 들어가고 유지하려면 품질·배송 성적표가 더 중요해졌다는 뜻입니다.",
-         "why": "입점·유지 조건이 까다로워져 사전 대비가 필요합니다.", "source": "news.example.com"},
+         "why": "입점·유지 조건이 까다로워져 사전 대비가 필요합니다.",
+         "key_stat": {"value": "3단계", "label": "새로 도입되는 입점 심사 등급"}, "source": "news.example.com"},
         {"headline": "이커머스 상반기 거래액 8% 성장", "subtitle": "8% 성장",
          "lead": "올해 상반기 국내 이커머스 거래액이 전년 대비 8% 늘었습니다. 패션·뷰티가 성장을 견인했고 모바일 결제 비중은 역대 최고를 기록했습니다.",
          "facts": ["거래액 전년비 8% 증가", "패션·뷰티가 성장 견인", "모바일 결제 비중 최고"],
