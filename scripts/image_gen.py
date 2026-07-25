@@ -605,16 +605,24 @@ def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_la
     wlines = _wrap_balanced(d, why, HW, txt_maxw)[:3]
     text_h = (len(wlines)-1)*LHW + 34          # 💡 문구 실제 높이
     box_h = text_h + 64                        # 상하 패딩 32씩
+    slines = _wrap_balanced(d, simple, SF, W-2*M)
     if background:   # 배경 + 쉽게 말하면 + 💡 (상단 정렬, 위→아래로 자연스럽게 채움)
         y = 196
         y = _section(d, M, "배경", y, acc)
         y = _para_hl(d, background, BF, M, y, W-2*M, _DBODY, acc, BLH) + 48
         y = _section(d, M, "쉽게 말하면", y, acc)
-        y = _para_hl(d, simple, SF, M, y, W-2*M, _DBODY, acc, SLH) + 60
-    else:            # 쉽게 말하면 + 💡 (상단 정렬)
-        y = 210
+        for ln in slines:
+            _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
+        y += 60
+    else:            # 쉽게 말하면 + 💡 만 → 그룹을 세로 중앙에 둬 여백을 위아래로 분산
+        simple_h = 60 + len(slines)*SLH
+        group = simple_h + 60 + box_h
+        top, bot = 200, H-150
+        y = top + max(0, ((bot - top) - group) // 2)
         y = _section(d, M, "쉽게 말하면", y, acc)
-        y = _para_hl(d, simple, SF, M, y, W-2*M, _DBODY, acc, SLH) + 64
+        for ln in slines:
+            _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
+        y += 60
     by = min(y, H - 140 - box_h)               # 💡는 본문 바로 아래(넘치면 하단에 고정)
     _glass(img, [M, by, W-M, by+box_h], radius=24, alpha=52)
     _fa_icon(img, FA_G["lightbulb"], M+44, by+box_h//2, 42, acc)
