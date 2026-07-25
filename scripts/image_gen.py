@@ -615,11 +615,8 @@ def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_la
         for ln in slines:
             _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
         y += 60
-    else:            # 쉽게 말하면 + 💡 만 → 그룹을 세로 중앙에 둬 여백을 위아래로 분산
-        simple_h = 60 + len(slines)*SLH
-        group = simple_h + 60 + box_h
-        top, bot = 200, H-150
-        y = top + max(0, ((bot - top) - group) // 2)
+    else:            # 쉽게 말하면 + 💡 — 상단부터 채워 '위 공백'을 없앰(💡는 본문 바로 아래)
+        y = 206
         y = _section(d, M, "쉽게 말하면", y, acc)
         for ln in slines:
             _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
@@ -664,16 +661,12 @@ def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, pre
             nonlocal slide
             slide += 1
             return os.path.join(out_dir, f"{prefix}_{slide}.jpg")
-        has_stat = bool(ks.get("value"))
         # P1: 사진 있으면 사진+헤드라인+리드, 없으면 헤드라인+수치+리드(render_p1이 내부 판단)
         p = _p(); render_p1(category_id, cat_name, i, 3, it["headline"], lead, ks, photo, p); paths.append(p)
-        # 배경 배치: 사진+수치가 다 있는 흔한 경우엔 3면(상단 채움), 그 외엔 2면(썰렁함 방지)
-        if has_photo and has_stat:
-            p = _p(); render_p2(category_id, cat_name, i, 3, ks, facts, "", p); paths.append(p)
-            p = _p(); render_p3(category_id, cat_name, i, 3, bg, simple, why, i == total, p); paths.append(p)
-        else:   # 수치는 P1(사진 없을 때) 또는 없음 → P2는 팩트+배경, P3는 쉽게+💡
-            p = _p(); render_p2(category_id, cat_name, i, 3, {}, facts, bg, p); paths.append(p)
-            p = _p(); render_p3(category_id, cat_name, i, 3, "", simple, why, i == total, p); paths.append(p)
+        # 2면: 수치(사진 있을 때만 패널)+핵심 팩트+배경 → 지면을 꽉 채움 / 3면: 쉽게+💡
+        p2_stat = ks if has_photo else {}   # 사진 없으면 수치는 이미 1면에 있음
+        p = _p(); render_p2(category_id, cat_name, i, 3, p2_stat, facts, bg, p); paths.append(p)
+        p = _p(); render_p3(category_id, cat_name, i, 3, "", simple, why, i == total, p); paths.append(p)
     return paths
 
 
