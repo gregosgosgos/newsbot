@@ -663,8 +663,8 @@ def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, pre
         if has_photo and has_stat:
             p = _p(); render_p2(category_id, cat_name, i, 3, ks, facts, "", p); paths.append(p)
             p = _p(); render_p3(category_id, cat_name, i, 3, bg, simple, why, i == total, p); paths.append(p)
-        else:
-            p = _p(); render_p2(category_id, cat_name, i, 3, ({} if not has_photo else ks), facts, bg, p); paths.append(p)
+        else:   # 수치는 P1(사진 없을 때) 또는 없음 → P2는 팩트+배경, P3는 쉽게+💡
+            p = _p(); render_p2(category_id, cat_name, i, 3, {}, facts, bg, p); paths.append(p)
             p = _p(); render_p3(category_id, cat_name, i, 3, "", simple, why, i == total, p); paths.append(p)
     return paths
 
