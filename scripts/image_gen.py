@@ -626,7 +626,7 @@ def render_p2(category_id, cat_name, idx, npages, key_stat, facts, background, o
         y += 8
         y = _section(d, M, "배경", y, acc)
         _para_hl(d, background, BF, M, y, W-2*M, _DBODY, acc, BLH)
-    _dfoot(d, M, handle, "쉽게 풀면 →")
+    _dfoot(d, M, handle, "쉽게 풀어보면 →")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=92)
     return out_path
@@ -646,13 +646,13 @@ def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_la
         y = 196
         y = _section(d, M, "배경", y, acc)
         y = _para_hl(d, background, BF, M, y, W-2*M, _DBODY, acc, BLH) + 48
-        y = _section(d, M, "쉽게 말하면", y, acc)
+        y = _section(d, M, "쉽게 풀어보면", y, acc)
         for ln in slines:
             _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
         y += 60
     else:            # 쉽게 말하면 + 💡 — 상단부터 채워 '위 공백'을 없앰(💡는 본문 바로 아래)
         y = 206
-        y = _section(d, M, "쉽게 말하면", y, acc)
+        y = _section(d, M, "쉽게 풀어보면", y, acc)
         for ln in slines:
             _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
         y += 60
