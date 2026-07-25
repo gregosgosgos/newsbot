@@ -100,11 +100,15 @@ def _content_tokens(text: str) -> set:
     return {w.lower() for w in re.split(r"[^0-9A-Za-z가-힣]+", str(text))
             if len(w) >= 2 and w.lower() not in _CONTENT_STOP}
 
-def topic_overlaps(tokens_a: set, tokens_b: set) -> bool:
+def topic_overlaps(tokens_a: set, tokens_b: set,
+                   jac_thr: float = 0.18, strong_n: int = 2) -> bool:
     """두 기사의 본문 토큰이 '같은 주제'라 할 만큼 겹치는지 판단.
 
     제목엔 공통 단어가 없어도(예: '유통업계 생존위기' vs '홈플러스 회생·정치권')
     본문 핵심어가 상당수 겹치면 독자에겐 비슷한 얘기로 읽힌다. 이를 걸러낸다.
+
+    임계값은 상황별로 조절: 하루 안 중복은 느슨하게(기본), 어제와의 중복(cross-day)은
+    후속·진전 기사는 통과시키도록 엄격하게(jac_thr↑, strong_n↑) 준다.
     """
     if not tokens_a or not tokens_b:
         return False
@@ -115,7 +119,7 @@ def topic_overlaps(tokens_a: set, tokens_b: set) -> bool:
     strong = [w for w in inter if len(w) >= 3]          # 구체 명사(3자+) 겹침
     # 한국어 표면형 토큰은 신호가 약해, 실측 기준 '3자+ 핵심어 2개 이상'이면 같은 주제로 본다.
     # (구별돼야 하는 뉴스쌍은 공유 강한토큰이 대개 0개, 겹치는 쌍은 2~3개)
-    return jac >= 0.18 or len(strong) >= 2
+    return jac >= jac_thr or len(strong) >= strong_n
 
 
 def collect_category_news(keywords: list, hours_window: int = 20) -> list:

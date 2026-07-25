@@ -20,6 +20,7 @@ from scripts.naver_news import (
     collect_category_news, fetch_article, download_image,
     _content_tokens, topic_overlaps,
 )
+from scripts.post_history import recent_token_sets, append_today
 from scripts.rewriter import rewrite_news
 from scripts.image_gen import generate_carousel
 from scripts.instagram_poster import post_carousel, build_carousel_caption
@@ -45,6 +46,7 @@ def git_commit_and_push(message: str):
     subprocess.run(["git", "config", "user.name", "newsbot-ci"], check=True)
     subprocess.run(["git", "config", "user.email", "newsbot-ci@users.noreply.github.com"], check=True)
     subprocess.run(["git", "add", "-f", "output/"], check=True)  # gitignore 무시하고 강제 추가
+    subprocess.run(["git", "add", "state/"])                     # 게시 기록(cross-day 중복 방지)
     if subprocess.run(["git", "diff", "--cached", "--quiet"]).returncode == 0:
         logger.info("[git] 변경된 이미지 없음, 커밋 스킵"); return
     subprocess.run(["git", "commit", "-m", message], check=True)
@@ -68,6 +70,7 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
 
     items = []
     accepted_tokens = []   # 이미 채택한 뉴스들의 본문 토큰(주제 겹침 방지용)
+    prev_days = recent_token_sets(category_id)   # 최근 1~2일 올린 뉴스 토큰(어제와 중복 방지)
     examined = 0
     MAX_EXAMINE = NEWS_PER_CATEGORY + 8   # 광고/중복/주제겹침 스킵 대비 여유 후보
     for item in candidates:
@@ -81,15 +84,18 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
                 result["errors"].append(f"[스킵] 광고/홍보성: {item['title']}"); continue
             if content.get("is_factual_risk"):
                 result["errors"].append(f"[스킵] 팩트 리스크: {content.get('headline')}"); continue
-            # 주제 겹침 방지: 이미 채택한 뉴스와 본문 핵심어가 상당수 겹치면 스킵
-            # (제목만 다르고 같은 주제를 다루는 기사 배제)
             toks = _content_tokens(" ".join([
                 item.get("title", ""), content.get("headline", ""),
                 content.get("lead", ""), " ".join(content.get("facts", [])),
                 content.get("background", ""),
             ]))
+            # (1) 하루 안 주제 겹침 방지: 이미 채택한 뉴스와 상당수 겹치면 스킵
             if any(topic_overlaps(toks, prev) for prev in accepted_tokens):
                 result["errors"].append(f"[스킵] 주제 겹침: {content.get('headline')}"); continue
+            # (2) 어제와 중복 방지(cross-day): '거의 판박이'만 스킵, 진전 있는 후속 기사는 통과
+            #     엄격한 임계값(jac_thr↑, strong_n↑)으로 near-duplicate만 걸러낸다.
+            if any(topic_overlaps(toks, prev, jac_thr=0.34, strong_n=4) for prev in prev_days):
+                result["errors"].append(f"[스킵] 어제와 중복: {content.get('headline')}"); continue
             photo = download_image(img_url, os.path.join("tmpimg", f"{category_id}_{examined}.jpg"))
             items.append({
                 "headline": content.get("headline", ""),
@@ -106,6 +112,13 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
             accepted_tokens.append(toks)
         except Exception as e:
             result["errors"].append(f"{item['title']}: {e}")
+
+    # 오늘 채택한 뉴스를 기록에 저장(실게시 때만) → 내일 실행이 어제 중복을 피함
+    if not dry_run and items:
+        append_today(category_id, [
+            {"headline": it["headline"], "tokens": tk}
+            for it, tk in zip(items, accepted_tokens)
+        ])
 
     if not items:
         result["errors"].append("생성된 카드 없음"); return result
