@@ -527,7 +527,7 @@ def render_p1(category_id, cat_name, idx, npages, headline, lead, key_stat, phot
     _eyebrow(img, d, M, acc, cat_name, idx, 1, npages)
     has_photo = bool(photo) and os.path.exists(photo) and _photo_band(img, [M, 150, W-M, 540], photo)
     d = ImageDraw.Draw(img)
-    HF = _kf(True, 60); HLH = int(60*1.28); LF = _kf(False, 40); LLH = 64
+    HF = _kf(True, 60); HLH = int(60*1.28); LF = _kf(False, 37); LLH = 60
     hl_lines = _wrap_words(d, headline, HF, W-2*M)
     lead_lines = _wrap_balanced(d, lead, LF, W-2*M) if lead else []
     show_stat = (not has_photo) and bool(key_stat) and bool(key_stat.get("value"))
@@ -556,32 +556,32 @@ def render_p1(category_id, cat_name, idx, npages, headline, lead, key_stat, phot
     return out_path
 
 def render_p2(category_id, cat_name, idx, npages, key_stat, facts, background, out_path):
-    """2면 — 핵심 수치(패널) + 핵심 팩트 (+ 사진 없을 땐 배경)."""
+    """2면 — 핵심 수치(패널) + 핵심 팩트 (+ 배경). 콘텐츠 블록을 세로 중앙에 둬 여백을 고르게."""
     cat_color, acc, img = _dbase(category_id, 930)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
     _eyebrow(img, d, M, acc, cat_name, idx, 2, npages)
-    FF = _kf(True, 38); FLH = 52; FGAP = 40; fx = M+52; fw = W-fx-M
-    BF = _kf(False, 40); BLH = 64
+    FF = _kf(True, 37); FLH = 50; FGAP = 42; fx = M+54; fw = W-fx-M; NF = _nf(36)
+    BF = _kf(False, 37); BLH = 58
     flist = facts[:3]
     fact_lines = [_wrap_balanced(d, f, FF, fw) for f in flist]
     bg_lines = _wrap_balanced(d, background, BF, W-2*M) if background else []
     has_stat = bool(key_stat) and bool(key_stat.get("value"))
-    if has_stat:   # 수치 패널(상단) — 과하지 않게 절제된 크기
-        y = 176; ph = 150
-        _glass(img, [M, y, W-M, y+ph], radius=22, alpha=38)
+    STAT_H = 158
+    stat_h = (STAT_H + 54) if has_stat else 0
+    facts_h = 60 + sum(len(fl)*FLH for fl in fact_lines) + FGAP*max(0, len(fact_lines)-1)
+    bg_h = (52 + 60 + len(bg_lines)*BLH) if background else 0
+    top, bot = 188, H-150
+    y = top + max(0, ((bot-top)-(stat_h+facts_h+bg_h))//2)   # 전체 블록 세로 중앙
+    if has_stat:   # 수치 패널 — 절제된 크기
+        _glass(img, [M, y, W-M, y+STAT_H], radius=22, alpha=38)
         d = ImageDraw.Draw(img)
-        d.rounded_rectangle([M, y, M+11, y+ph], radius=6, fill=acc)
-        d.text((M+50, y+30), str(key_stat["value"]), font=_kf(True, 62), fill=acc)
-        d.text((M+52, y+104), str(key_stat.get("label", "")), font=_kf(False, 28), fill=(172, 192, 224))
-        y += ph + 54
-    else:   # 수치 패널 없음 → 팩트(+배경) 블록 세로 중앙 정렬
-        fh = 60 + sum(len(fl)*FLH for fl in fact_lines) + FGAP*max(0, len(fact_lines)-1)
-        bh = (52 + 60 + len(bg_lines)*BLH) if background else 0
-        top, bot = 200, H-150
-        y = top + max(0, ((bot-top)-(fh+bh))//2)
+        d.rounded_rectangle([M, y, M+11, y+STAT_H], radius=6, fill=acc)
+        d.text((M+50, y+34), str(key_stat["value"]), font=_kf(True, 62), fill=acc)
+        d.text((M+52, y+110), str(key_stat.get("label", "")), font=_kf(False, 28), fill=(172, 192, 224))
+        y += STAT_H + 54
     y = _section(d, M, "핵심 팩트", y, acc)
     for k, fl in enumerate(fact_lines, 1):
-        d.text((M, y-3), str(k), font=_nf(40), fill=acc)   # 1·2·3, 구분선 없이 여백으로
+        d.text((M+2, y+20), str(k), font=NF, fill=acc, anchor="lm")   # 번호를 첫 줄 세로 중앙에 맞춤
         yy = y
         for ln in fl:
             _draw_hl(d, ln, FF, fx, yy, (238, 242, 252), acc); yy += FLH
