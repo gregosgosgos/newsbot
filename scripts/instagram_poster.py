@@ -103,14 +103,42 @@ def build_caption(headline: str, comment: str, source_note: str = "") -> str:
     return f"{headline}\n\n{comment}\n\n{source_note}\n\n{tags}"
 
 
+# 계정별 캡션 페르소나(공감 오프닝 · 참여 질문 · 해시태그) — 카드뉴스 계정 벤치마킹 반영
+_CAPTION = {
+    "이커머스": {
+        "hook": "쿠팡·네이버·알리까지, 이커머스 판은 매일 바뀌죠.\n바빠서 다 못 챙기는 셀러님을 위해 오늘의 핵심만 모았어요 👇",
+        "ask": "오늘 소식 중 내 사업에 제일 영향 줄 것 같은 건 뭔가요? 댓글로 알려주세요 💬",
+        "tags": "#이커머스 #쿠팡 #스마트스토어 #온라인쇼핑몰 #셀러 #오픈마켓 #이커머스창업 #쇼핑몰 #전자상거래 #오늘의뉴스",
+    },
+    "식품/외식업": {
+        "hook": "메뉴 고민에 재료값까지, 사장님은 뉴스 볼 틈도 없죠.\n외식·식품업계 오늘의 핵심만 딱 정리했어요 👇",
+        "ask": "요즘 매장에서 제일 고민되는 건 뭔가요? 댓글로 나눠주세요 💬",
+        "tags": "#외식업 #자영업 #식품업계 #프랜차이즈 #배달앱 #식자재 #외식창업 #사장님 #요식업 #오늘의뉴스",
+    },
+    "창업/자영업": {
+        "hook": "시작하는 것도, 버티는 것도 쉽지 않죠.\n소상공인·자영업 사장님이 챙겨야 할 오늘의 핵심만 모았어요 👇",
+        "ask": "지금 제일 절실한 지원이나 정보는 뭔가요? 댓글로 알려주세요 💬",
+        "tags": "#창업 #자영업 #소상공인 #사업자대출 #창업지원 #1인창업 #상권분석 #자영업자 #소상공인지원 #오늘의뉴스",
+    },
+}
+
+
 def build_carousel_caption(cat_name: str, items: list) -> str:
-    """캐러셀 캡션: 오늘의 뉴스 3건 + 원문 링크 + 해시태그."""
-    lines = [f"📢 오늘의 {cat_name} 뉴스"]
+    """캐러셀 캡션: 공감 오프닝 → 뉴스 3건 → 참여 질문 → 저장·팔로우 CTA → 원문 → 해시태그."""
+    c = _CAPTION.get(cat_name)
+    L = []
+    if c:
+        L += [c["hook"], ""]
+    L.append(f"📌 오늘의 {cat_name} 뉴스")
     for i, it in enumerate(items, 1):
-        lines.append(f"{i}. {it['headline']}")
+        L.append(f"{i}. {it['headline']}")
+    L.append("")
+    if c:
+        L += [c["ask"], ""]
+    L.append("🔖 나중에 다시 볼 수 있게 저장하고,\n매일 아침 핵심만 받아보려면 팔로우 해두세요 👍")
     srcs = [it.get("source", "") for it in items if it.get("source")]
     if srcs:
-        lines.append("\n원문:")
-        lines += [f"· {s}" for s in srcs]
-    lines.append("\n#뉴스 #오늘의뉴스 #" + cat_name.replace("/", " #"))
-    return "\n".join(lines)
+        L.append("\n원문 ⬇️")
+        L += [f"· {s}" for s in srcs]
+    L.append("\n" + (c["tags"] if c else "#뉴스 #오늘의뉴스 #" + cat_name.replace("/", " #")))
+    return "\n".join(L)

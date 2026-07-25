@@ -656,7 +656,9 @@ def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_la
         for ln in slines:
             _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
         y += 60
-    by = min(y, H - 140 - box_h)               # 💡는 본문 바로 아래(넘치면 하단에 고정)
+    # 마지막 카드는 하단에 '저장 CTA' 자리를 비워둔다(넘치면 💡를 위로 밀어 올림)
+    foot_reserve = 210 if is_last else 140
+    by = min(y, H - foot_reserve - box_h)      # 💡는 본문 바로 아래(넘치면 하단에 고정)
     _glass(img, [M, by, W-M, by+box_h], radius=24, alpha=52)
     _fa_icon(img, FA_G["lightbulb"], M+44, by+box_h//2, 42, acc)
     d = ImageDraw.Draw(img)
@@ -664,7 +666,13 @@ def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_la
     ty = by + (box_h - text_h) // 2            # 문구를 박스 세로 중앙에
     for ln in wlines:
         d.text((txt_x, ty), ln, font=HW, fill=(245, 248, 255)); ty += LHW
-    _dfoot(d, M, handle, "팔로우하고 매일 받아보기" if is_last else "다음 뉴스 →")
+    if is_last:   # 저장 유도 CTA(북마크 아이콘 + 문구) — 가로 중앙
+        ct = "저장해두면 필요할 때 다시 볼 수 있어요"; cf = _kf(True, 27)
+        d = ImageDraw.Draw(img); ctw = int(d.textlength(ct, font=cf))
+        isz = 30; gap = 14; total = isz + gap + ctw; cx = (W - total) // 2; cy = H - 166
+        _fa_icon(img, "", cx + isz//2, cy, isz, acc)   # FontAwesome bookmark
+        ImageDraw.Draw(img).text((cx + isz + gap, cy), ct, font=cf, fill=(206, 222, 250), anchor="lm")
+    _dfoot(d, M, handle, "팔로우하고 매일 아침 받기 →" if is_last else "다음 뉴스 →")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=92)
     return out_path
