@@ -202,14 +202,25 @@ def fetch_article_text(url: str, max_chars: int = 2500) -> str:
 
 
 def download_image(url: str, dest: str) -> str:
-    """대표 이미지를 내려받아 dest에 저장. 성공 시 dest, 실패 시 ''."""
+    """대표 이미지를 내려받아 dest에 저장. 성공 시 dest, 실패 시 ''.
+
+    로고·아이콘·배너 등 '사진이 아닌 이미지'는 저장하지 않고 ''을 반환한다
+    (카드에는 진짜 사진만 쓰고, 아니면 텍스트 레이아웃으로 폴백).
+    """
     if not url:
         return ""
     try:
         import os
+        from io import BytesIO
+        from PIL import Image
+        from scripts.image_gen import _is_photographic
         r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
         ctype = r.headers.get("content-type", "")
         if r.status_code == 200 and ctype.startswith("image") and len(r.content) > 3000:
+            im = Image.open(BytesIO(r.content))
+            if not _is_photographic(im):
+                print(f"[SKIP] 사진 아님(로고/저품질)로 판단: {url}")
+                return ""
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with open(dest, "wb") as f:
                 f.write(r.content)

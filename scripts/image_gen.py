@@ -229,6 +229,68 @@ def render_cover(category_id, cat_name, date_str, hook, headlines_subs, out_path
     return out_path
 
 
+def render_cover_photo(category_id, cat_name, date_str, hook, headlines_subs, photo, out_path):
+    """사진 표지 — 그날 대표 뉴스 사진을 전면 배경으로, 하단에 제목·후킹·헤드라인 3건.
+
+    매일 표지 이미지가 달라져 피드에서 시선을 끈다. 사진은 브랜드 네이비로 컬러그레이드.
+    좋은 사진이 없을 땐 render_cover(확성기 표지)로 폴백한다(generate_carousel에서 분기).
+    """
+    acc, T, Mid, B = _palette(CATEGORY_COLORS.get(category_id, "#3f7bff"))
+    handle = CATEGORY_HANDLE.get(category_id, "@news")
+    ph = _grade_photo(_cover_crop(Image.open(photo).convert("RGB"), W, H))
+    # 스크림: 상단 살짝 + 하단 강하게(네이비)로 하단 텍스트 가독 확보
+    arr = np.asarray(ph).astype(np.float32)
+    yy = np.linspace(0, 1, H)[:, None, None]
+    navy = np.array([8, 13, 28], np.float32)
+    a_top = np.clip((0.20 - yy) / 0.20, 0, 1) * 0.45
+    a_bot = np.clip((yy - 0.30) / 0.34, 0, 1) * 0.90   # 하단 텍스트 영역을 확실히 어둡게
+    a = np.clip(a_top + a_bot, 0, 0.97)
+    arr = arr * (1 - a) + navy * a
+    img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB")
+    img = _glow(img, 150, 1200, 720, acc, 0.15).convert("RGBA")   # 하단 accent 글로우
+    d = ImageDraw.Draw(img); M = 84
+
+    d.text((M, 74), handle, font=_kf(True, 30), fill=(226, 236, 255))
+    d.text((W-M, 90), date_str, font=_kf(False, 30), fill=(212, 224, 250), anchor="rm")
+
+    TF = _kf(True, 88); TR = -4
+    _grad_text(img, "오늘의", TF, M, 612, (240, 245, 255), (150, 180, 255), TR)
+    _grad_text(img, cat_name, TF, M, 712, (150, 180, 255), (70, 120, 255), TR)
+    d = ImageDraw.Draw(img)
+    x2 = M + _tw(d, cat_name, TF, TR) + 30
+    _tracked(d, "뉴스", TF, x2, 712, (255, 255, 255), TR)
+
+    hy = 836; nb = (212, 224, 250); F = _kf(True, 36); Fe = _kf(True, 38)
+    m = re.search(r"\d+가지\s*핵심", hook)
+    if m:
+        pre, seg, post = hook[:m.start()], m.group(), hook[m.end():]
+        hx = _tracked(d, pre, F, M, hy, nb, -1.5)
+        sx0 = hx; hx = _tracked(d, seg, Fe, hx, hy-1, (255, 255, 255), -1.0)
+        d.rounded_rectangle([sx0, hy+48, hx-6, hy+54], radius=3, fill=(120, 165, 255))
+        _tracked(d, post, F, hx+4, hy, nb, -1.5)
+    else:
+        _tracked(d, hook, F, M, hy, nb, -1.5)
+
+    ly = 910; CF = _kf(True, 38)
+    for i, (hl, sub) in enumerate(headlines_subs[:3]):
+        d.text((M, ly-4), str(i+1), font=_nf(38), fill=(132, 172, 255))
+        txt = _fit(d, hl, CF, (W-M) - (M+52), -0.5)
+        _tracked(d, txt, CF, M+52, ly, (240, 244, 255), -0.5)
+        ly += 72
+
+    cy0 = H-58-100
+    _grad_round(img, [M, cy0, W-M, cy0+100], 50, (47, 91, 255), (74, 134, 255))
+    d = ImageDraw.Draw(img); cm = cy0+50
+    d.ellipse([M+20, cm-32, M+20+64, cm+32], fill=(255, 255, 255))
+    _fa_icon(img, FA_G["arrow"], M+20+32, cm, 36, (47, 91, 255))
+    d.text((M+112, cm), "넘겨서 자세히 보기", font=_kf(True, 38), fill=(255, 255, 255), anchor="lm")
+    _fa_icon(img, FA_G["chev"], W-M-56, cm, 40, (210, 228, 255))
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    img.convert("RGB").save(out_path, "JPEG", quality=92)
+    return out_path
+
+
 def render_detail(category_id, cat_name, date_str, idx, total,
                   headline, summary, comment, source, out_path):
     acc, T, Mid, B = _palette(CATEGORY_COLORS.get(category_id, "#3f7bff"))
@@ -340,8 +402,9 @@ def _eyebrow(img, d, M, acc, cat_name, idx, page, npages):
     _dots(d, W-M, 98, npages, page-1, acc)
 
 def _section(d, M, label, y, acc):
-    d.rounded_rectangle([M, y+3, M+7, y+35], radius=3, fill=acc)
-    d.text((M+26, y), label, font=_kf(True, 33), fill=acc)
+    """섹션 라벨 — 얇은 틱 + 톤 낮춘 라벨(살짝 자간)로 템플릿 느낌을 줄이고 부드럽게."""
+    d.rounded_rectangle([M, y+5, M+6, y+31], radius=3, fill=acc)
+    _tracked(d, label, _kf(True, 30), M+22, y+1, _lighten(acc, 0.32), 0.8)
     return y + 60
 
 _HL_RE = re.compile(r"[0-9][0-9,\.]*\s*(?:억|만|천|조|원|달러|%|퍼센트|명|배|건|개|가지|톤|kg|위|차|년|월|일)")
@@ -375,17 +438,8 @@ def _dbase(category_id, glow_x):
     base = _glow(_bg(_DBG_T, _DBG_M, _DBG_B), glow_x, 30, 800, _lighten(cat_color, 0.05), .22)
     return cat_color, acc, base.convert("RGBA")
 
-def _photo_band(img, box, photo_path):
-    """기사 대표 이미지를 라운드 밴드로 커버-핏 배치.
-
-    밝은/흰 배경 이미지가 어두운 카드에서 튀지 않도록 살짝 톤다운 + 하단 스크림 +
-    테두리 + '관련 이미지' 태그를 얹어 의도된 프레임처럼 보이게 한다.
-    """
-    x0, y0, x1, y1 = [int(v) for v in box]; tw, th = x1-x0, y1-y0
-    try:
-        ph = Image.open(photo_path).convert("RGB")
-    except Exception:
-        return False
+def _cover_crop(ph, tw, th):
+    """이미지를 (tw,th)에 커버-핏(비율 유지, 중앙 크롭)."""
     sr = ph.width / max(1, ph.height); dr = tw / th
     if sr > dr:
         nh = th; nw = max(tw, int(round(th*sr)))
@@ -393,8 +447,60 @@ def _photo_band(img, box, photo_path):
         nw = tw; nh = max(th, int(round(tw/sr)))
     ph = ph.resize((nw, nh), Image.LANCZOS)
     ox, oy = (nw-tw)//2, (nh-th)//2
-    ph = ph.crop((ox, oy, ox+tw, oy+th))
-    ph = Image.blend(ph, Image.new("RGB", (tw, th), (11, 18, 32)), 0.12)  # 톤다운
+    return ph.crop((ox, oy, ox+tw, oy+th))
+
+
+def _grade_photo(ph):
+    """자료사진을 브랜드 네이비 톤으로 은은하게 컬러그레이드해 무드 통일.
+
+    원본이 로고든 스톡이든 현장사진이든, 부분 탈채도 + 루미넌스 기반 네이비 듀오톤을
+    살짝 섞어 어떤 사진이 와도 같은 다크 네이비 결로 묶이게 한다.
+    """
+    arr = np.asarray(ph.convert("RGB")).astype(np.float32)
+    gray = arr @ np.array([0.299, 0.587, 0.114], np.float32)
+    arr = arr * 0.68 + gray[..., None] * 0.32           # 부분 탈채도
+    lum = (gray / 255.0)[..., None]
+    dark = np.array([10, 18, 34], np.float32)           # 섀도우 = 딥네이비
+    light = np.array([150, 172, 205], np.float32)       # 하이라이트 = 옅은 블루그레이
+    duo = dark * (1 - lum) + light * lum
+    arr = arr * 0.78 + duo * 0.22                        # 듀오톤 22% 혼합
+    arr *= 0.95                                          # 살짝 어둡게
+    return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB")
+
+
+def _is_photographic(im):
+    """로고·아이콘·배너 등 '사진 아닌 이미지'를 걸러낸다(진짜 사진이면 True)."""
+    try:
+        im = im.convert("RGB")
+    except Exception:
+        return False
+    w, h = im.size
+    if w < 480 or h < 300:                 # 너무 작으면 저품질/아이콘
+        return False
+    r = w / h
+    if r > 3.2 or r < 0.42:                # 극단 비율 = 배너/세로 아이콘
+        return False
+    a = np.asarray(im.resize((64, 64))).astype(np.float32)
+    lum = a @ np.array([0.299, 0.587, 0.114], np.float32)
+    frac_bright = float((a.min(axis=2) > 232).mean())   # 흰/밝은 단색 배경 비율
+    sat = float((a.max(axis=2) - a.min(axis=2)).mean())  # 평균 채도
+    if frac_bright > 0.42:                 # 흰 배경 로고류
+        return False
+    if lum.std() < 20:                     # 완전 밋밋한 단색(진짜 사진은 여유롭게 통과)
+        return False
+    if sat < 12 and lum.std() < 45:        # 채도 거의 없는 도표/텍스트/로고 이미지
+        return False
+    return True
+
+
+def _photo_band(img, box, photo_path):
+    """기사 대표 이미지를 라운드 밴드로 커버-핏 배치(브랜드 컬러그레이드 + 하단 스크림 + 태그)."""
+    x0, y0, x1, y1 = [int(v) for v in box]; tw, th = x1-x0, y1-y0
+    try:
+        ph = Image.open(photo_path).convert("RGB")
+    except Exception:
+        return False
+    ph = _grade_photo(_cover_crop(ph, tw, th))          # 컬러그레이드(무드 통일)
     # 하단 스크림(아래쪽으로 갈수록 카드 배경에 자연스럽게 녹아들게)
     arr = np.asarray(ph).astype(np.float32)
     yy = np.linspace(0, 1, th)[:, None, None]
@@ -454,36 +560,34 @@ def render_p2(category_id, cat_name, idx, npages, key_stat, facts, background, o
     cat_color, acc, img = _dbase(category_id, 930)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
     _eyebrow(img, d, M, acc, cat_name, idx, 2, npages)
-    FF = _kf(True, 38); FLH = 50; fw = W-M-74-M; BF = _kf(False, 40); BLH = 62
+    FF = _kf(True, 38); FLH = 52; FGAP = 40; fx = M+52; fw = W-fx-M
+    BF = _kf(False, 40); BLH = 64
     flist = facts[:3]
     fact_lines = [_wrap_balanced(d, f, FF, fw) for f in flist]
     bg_lines = _wrap_balanced(d, background, BF, W-2*M) if background else []
     has_stat = bool(key_stat) and bool(key_stat.get("value"))
-    if has_stat:   # 수치 히어로 패널(상단 고정)
-        y = 176; ph = 176
-        _glass(img, [M, y, W-M, y+ph], radius=22, alpha=40)
+    if has_stat:   # 수치 패널(상단) — 과하지 않게 절제된 크기
+        y = 176; ph = 150
+        _glass(img, [M, y, W-M, y+ph], radius=22, alpha=38)
         d = ImageDraw.Draw(img)
-        d.rounded_rectangle([M, y, M+12, y+ph], radius=6, fill=acc)
-        d.text((M+52, y+32), str(key_stat["value"]), font=_kf(True, 80), fill=acc)
-        d.text((M+54, y+130), str(key_stat.get("label", "")), font=_kf(False, 29), fill=(172, 192, 224))
-        y += ph + 48
-    else:   # 수치 패널 없음 → 팩트+배경 블록 세로 중앙 정렬
-        fh = 60 + sum(len(fl)*FLH + 14 + (28 if i < len(fact_lines)-1 else 0)
-                      for i, fl in enumerate(fact_lines))
-        bh = (42 + 60 + len(bg_lines)*BLH) if background else 0
+        d.rounded_rectangle([M, y, M+11, y+ph], radius=6, fill=acc)
+        d.text((M+50, y+30), str(key_stat["value"]), font=_kf(True, 62), fill=acc)
+        d.text((M+52, y+104), str(key_stat.get("label", "")), font=_kf(False, 28), fill=(172, 192, 224))
+        y += ph + 54
+    else:   # 수치 패널 없음 → 팩트(+배경) 블록 세로 중앙 정렬
+        fh = 60 + sum(len(fl)*FLH for fl in fact_lines) + FGAP*max(0, len(fact_lines)-1)
+        bh = (52 + 60 + len(bg_lines)*BLH) if background else 0
         top, bot = 200, H-150
         y = top + max(0, ((bot-top)-(fh+bh))//2)
     y = _section(d, M, "핵심 팩트", y, acc)
     for k, fl in enumerate(fact_lines, 1):
-        d.text((M, y+1), f"{k:02d}", font=_nf(34), fill=acc)
+        d.text((M, y-3), str(k), font=_nf(40), fill=acc)   # 1·2·3, 구분선 없이 여백으로
         yy = y
         for ln in fl:
-            _draw_hl(d, ln, FF, M+74, yy, (240, 244, 255), acc); yy += FLH
-        y = yy + 14
-        if k < len(fact_lines):
-            d.line([(M, y), (W-M, y)], fill=(40, 56, 88), width=1); y += 28
+            _draw_hl(d, ln, FF, fx, yy, (238, 242, 252), acc); yy += FLH
+        y = yy + FGAP
     if background:
-        y += 42
+        y = y - FGAP + 52
         y = _section(d, M, "배경", y, acc)
         _para_hl(d, background, BF, M, y, W-2*M, _DBODY, acc, BLH)
     _dfoot(d, M, handle, "쉽게 풀면 →" if background else "배경·의미 →")
@@ -492,24 +596,25 @@ def render_p2(category_id, cat_name, idx, npages, key_stat, facts, background, o
     return out_path
 
 def render_p3(category_id, cat_name, idx, npages, simple, why, is_last, out_path):
-    """3면 — 쉽게 말하면(세로 중앙) + 💡 관전 포인트. 여백을 위아래로 고르게 분배해 의도된 여백으로 보이게 한다."""
+    """3면 — 쉽게 말하면 + 💡 관전 포인트를 한 덩어리로 묶어 세로 중앙 배치(중간 빈 공간 최소화)."""
     cat_color, acc, img = _dbase(category_id, 150)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
     _eyebrow(img, d, M, acc, cat_name, idx, 3, npages)
-    # 💡 박스 하단 고정 위치 먼저 계산
+    SF = _kf(False, 42); SLH = 66
+    slines = _wrap_balanced(d, simple, SF, W-2*M)
+    simple_h = 60 + len(slines)*SLH
     HW = _kf(True, 34); LHW = 46; txt_x = M+96; txt_maxw = (W-M) - txt_x
     wlines = _wrap_balanced(d, why, HW, txt_maxw)[:3]
     box_h = 30 + len(wlines)*LHW + 26
-    by = H - 140 - box_h
-    # 쉽게 말하면 → 상단~💡박스 사이 공간에 세로 중앙 정렬
-    SF = _kf(False, 42); SLH = 66
-    slines = _wrap_balanced(d, simple, SF, W-2*M)
-    block = 60 + len(slines)*SLH
-    top, bot = 210, by - 46
-    y = top + max(0, ((bot - top) - block) // 2)
-    y = _section(d, M, "쉽게 말하면", y, acc)
+    GAP = 78
+    # 쉽게 + 💡 를 한 그룹으로 세로 중앙(둘이 붙어 보이게)
+    group = simple_h + GAP + box_h
+    top, bot = 196, H-158
+    y0 = top + max(0, ((bot - top) - group) // 2)
+    y = _section(d, M, "쉽게 말하면", y0, acc)
     for ln in slines:
         _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
+    by = y0 + simple_h + GAP
     _glass(img, [M, by, W-M, by+box_h], radius=24, alpha=52)
     _fa_icon(img, FA_G["lightbulb"], M+46, by+box_h//2, 44, acc)
     d = ImageDraw.Draw(img)
@@ -528,8 +633,14 @@ def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, pre
     반환: [표지, 뉴스1-p1, 뉴스1-p2, 뉴스2-p1, ...] (표지 1 + 뉴스별 2장)."""
     paths = []
     cover = os.path.join(out_dir, f"{prefix}_0.jpg")
-    render_cover(category_id, cat_name, date_str, hook,
-                 [(it["headline"], it.get("subtitle", "")) for it in items], cover)
+    heads = [(it["headline"], it.get("subtitle", "")) for it in items]
+    # 표지: 좋은 자료사진이 있으면 사진 표지, 없으면 확성기 표지로 폴백
+    cover_photo = next((it.get("photo", "") for it in items
+                        if it.get("photo") and os.path.exists(it.get("photo", ""))), "")
+    if cover_photo:
+        render_cover_photo(category_id, cat_name, date_str, hook, heads, cover_photo, cover)
+    else:
+        render_cover(category_id, cat_name, date_str, hook, heads, cover)
     paths.append(cover)
     total = len(items)
     slide = 0
