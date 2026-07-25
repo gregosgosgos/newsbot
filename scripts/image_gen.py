@@ -534,7 +534,7 @@ def render_p1(category_id, cat_name, idx, npages, headline, lead, key_stat, phot
     if has_photo:
         y = 602
     else:   # 사진 없음: 헤드라인+수치+리드 블록을 세로 중앙 정렬 → 여백 고르게
-        block = len(hl_lines)*HLH + 71 + (140 if show_stat else 0) + (6 + len(lead_lines)*LLH if lead else 0)
+        block = len(hl_lines)*HLH + 71 + (168 if show_stat else 0) + (6 + len(lead_lines)*LLH if lead else 0)
         top, bot = 250, H-150
         y = top + max(0, ((bot-top)-block)//2)
     last_w = 0
@@ -542,11 +542,9 @@ def render_p1(category_id, cat_name, idx, npages, headline, lead, key_stat, phot
         _draw_hl(d, ln, HF, M, y, (255, 255, 255), acc)
         last_w = int(d.textlength(ln, font=HF)); y += HLH
     y += 10; d.rounded_rectangle([M, y, M+last_w, y+7], radius=4, fill=acc); y += 54
-    if show_stat:   # 사진 없을 때만 수치 히어로
-        SF = _kf(True, 92); d.text((M, y), str(key_stat["value"]), font=SF, fill=acc)
-        vw = int(d.textlength(str(key_stat["value"]), font=SF))
-        d.text((M+vw+24, y+42), str(key_stat.get("label", "")), font=_kf(False, 30), fill=(162, 184, 220))
-        y += 140
+    if show_stat:   # 사진 없을 때만 수치 히어로 — 라벨은 숫자 '아래'에(옆에 붙이면 잘림)
+        d.text((M, y), str(key_stat["value"]), font=_kf(True, 86), fill=acc); y += 104
+        d.text((M, y), str(key_stat.get("label", "")), font=_kf(False, 30), fill=(162, 184, 220)); y += 60
     if lead:
         y += 6
         _para_hl(d, lead, LF, M, y, W-2*M, _DBODY, acc, LLH)
@@ -556,41 +554,44 @@ def render_p1(category_id, cat_name, idx, npages, headline, lead, key_stat, phot
     return out_path
 
 def render_p2(category_id, cat_name, idx, npages, key_stat, facts, background, out_path):
-    """2면 — 핵심 수치(패널) + 핵심 팩트 (+ 배경). 콘텐츠 블록을 세로 중앙에 둬 여백을 고르게."""
+    """2면 — 핵심 수치(패널) + 핵심 팩트 + 배경. 상단부터 채워 지면을 꽉 채운다."""
     cat_color, acc, img = _dbase(category_id, 930)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
     _eyebrow(img, d, M, acc, cat_name, idx, 2, npages)
-    FF = _kf(True, 37); FLH = 50; FGAP = 42; fx = M+54; fw = W-fx-M; NF = _nf(36)
+    FF = _kf(True, 37); FLH = 50; FGAP = 40; fx = M+54; fw = W-fx-M; NF = _nf(34)
     BF = _kf(False, 37); BLH = 58
     flist = facts[:3]
     fact_lines = [_wrap_balanced(d, f, FF, fw) for f in flist]
-    bg_lines = _wrap_balanced(d, background, BF, W-2*M) if background else []
     has_stat = bool(key_stat) and bool(key_stat.get("value"))
-    STAT_H = 158
-    stat_h = (STAT_H + 54) if has_stat else 0
-    facts_h = 60 + sum(len(fl)*FLH for fl in fact_lines) + FGAP*max(0, len(fact_lines)-1)
-    bg_h = (52 + 60 + len(bg_lines)*BLH) if background else 0
-    top, bot = 188, H-150
-    y = top + max(0, ((bot-top)-(stat_h+facts_h+bg_h))//2)   # 전체 블록 세로 중앙
-    if has_stat:   # 수치 패널 — 절제된 크기
+    y = 182
+    if has_stat:   # 수치 패널 — 값+라벨을 실제 글자 높이로 측정해 세로 중앙 정렬
+        STAT_H = 150
         _glass(img, [M, y, W-M, y+STAT_H], radius=22, alpha=38)
         d = ImageDraw.Draw(img)
         d.rounded_rectangle([M, y, M+11, y+STAT_H], radius=6, fill=acc)
-        d.text((M+50, y+34), str(key_stat["value"]), font=_kf(True, 62), fill=acc)
-        d.text((M+52, y+110), str(key_stat.get("label", "")), font=_kf(False, 28), fill=(172, 192, 224))
-        y += STAT_H + 54
+        vf = _kf(True, 60); lf = _kf(False, 27)
+        val = str(key_stat["value"]); lab = str(key_stat.get("label", ""))
+        vb = d.textbbox((0, 0), val, font=vf); lb = d.textbbox((0, 0), lab or "가", font=lf)
+        vh = vb[3]-vb[1]; lh = lb[3]-lb[1]; gap = 12
+        block = vh + gap + lh
+        top = y + (STAT_H - block)//2
+        d.text((M+50, top - vb[1]), val, font=vf, fill=acc)
+        if lab:
+            d.text((M+52, top + vh + gap - lb[1]), lab, font=lf, fill=(174, 194, 226))
+        y += STAT_H + 50
     y = _section(d, M, "핵심 팩트", y, acc)
+    probe = d.textbbox((0, 0), "가", font=FF); line_mid = (probe[1] + probe[3]) / 2
     for k, fl in enumerate(fact_lines, 1):
-        d.text((M+2, y+20), str(k), font=NF, fill=acc, anchor="lm")   # 번호를 첫 줄 세로 중앙에 맞춤
+        d.text((M+2, y + line_mid), str(k), font=NF, fill=acc, anchor="lm")   # 번호를 첫 줄 세로 중앙에
         yy = y
         for ln in fl:
             _draw_hl(d, ln, FF, fx, yy, (238, 242, 252), acc); yy += FLH
         y = yy + FGAP
     if background:
-        y = y - FGAP + 52
+        y += 8
         y = _section(d, M, "배경", y, acc)
         _para_hl(d, background, BF, M, y, W-2*M, _DBODY, acc, BLH)
-    _dfoot(d, M, handle, "쉽게 풀면 →" if background else "배경·의미 →")
+    _dfoot(d, M, handle, "쉽게 풀면 →")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=92)
     return out_path
