@@ -543,8 +543,12 @@ def render_p1(category_id, cat_name, idx, npages, headline, lead, key_stat, phot
         last_w = int(d.textlength(ln, font=HF)); y += HLH
     y += 10; d.rounded_rectangle([M, y, M+last_w, y+7], radius=4, fill=acc); y += 54
     if show_stat:   # 사진 없을 때만 수치 히어로 — 라벨은 숫자 '아래'에(옆에 붙이면 잘림)
-        d.text((M, y), str(key_stat["value"]), font=_kf(True, 86), fill=acc); y += 104
-        d.text((M, y), str(key_stat.get("label", "")), font=_kf(False, 30), fill=(162, 184, 220)); y += 60
+        vf = _kf(True, 86); val = str(key_stat["value"])
+        vb = d.textbbox((0, 0), val, font=vf)
+        d.text((M, y - vb[1]), val, font=vf, fill=acc)   # 실제 글자 윗선을 y에 맞춤
+        ly = (y - vb[1]) + vb[3] + 26                    # 숫자 아래로 넉넉한 간격
+        d.text((M, ly), str(key_stat.get("label", "")), font=_kf(False, 30), fill=(162, 184, 220))
+        y = ly + 58
     if lead:
         y += 6
         _para_hl(d, lead, LF, M, y, W-2*M, _DBODY, acc, LLH)
