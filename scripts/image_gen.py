@@ -382,36 +382,35 @@ def _wrap_balanced(d, text, font, maxw):
             lo = mid + 1
     return _wrap_words(d, text, font, best)
 
-_CLAUSE_RE = re.compile(r"(?<=[,.!?…])\s+")
+_PUNC = ",.!?…"
 
 def _wrap_smart(d, text, font, maxw):
-    """절(쉼표/마침표) 경계에서 우선 줄바꿈해 자연스러운 호흡으로 읽히게 한다.
-    한 절이 한 줄을 넘을 때만 어절 단위로 나누고, 마지막 줄이 한 어절만 남는
-    '외톨이 줄'은 앞 줄에서 한 어절을 끌어와 방지한다."""
+    """어절을 채워 줄을 만들되, 줄이 충분히 찼을 때(>=60%)는 구두점(쉼표·마침표) 뒤에서
+    끊어 자연스러운 호흡으로 읽히게 한다. 짧은 조각이 홀로 튀지 않고, 마지막 줄이
+    한 어절만 남는 '외톨이 줄'도 앞 줄에서 끌어와 방지한다."""
     out = []
     for para in str(text).split("\n"):
-        clauses = [c.strip() for c in _CLAUSE_RE.split(para.strip()) if c.strip()]
-        cur = ""
-        for cl in clauses:
-            trial = (cur + " " + cl).strip() if cur else cl
-            if d.textlength(trial, font=font) <= maxw:
-                cur = trial
-            else:
-                if cur:
-                    out.append(cur); cur = ""
-                if d.textlength(cl, font=font) <= maxw:
-                    cur = cl
+        cur = []   # 현재 줄의 어절 리스트
+        for w in para.split():
+            if cur and d.textlength(" ".join(cur + [w]), font=font) > maxw:
+                # 줄을 끊어야 함 → 구두점으로 끝나는 어절 중 '충분히 뒤쪽'에서 우선 끊기
+                brk = None
+                for i in range(len(cur) - 1, -1, -1):
+                    if cur[i][-1] in _PUNC and \
+                       d.textlength(" ".join(cur[:i+1]), font=font) >= maxw * 0.6:
+                        brk = i + 1; break
+                if brk:
+                    out.append(" ".join(cur[:brk])); cur = cur[brk:] + [w]
                 else:
-                    wl = _wrap_words(d, cl, font, maxw)
-                    out.extend(wl[:-1]); cur = wl[-1] if wl else ""
+                    out.append(" ".join(cur)); cur = [w]
+            else:
+                cur.append(w)
         if cur:
-            out.append(cur)
+            out.append(" ".join(cur))
     if len(out) >= 2 and len(out[-1].split()) == 1:   # 외톨이 마지막 줄 방지
         prev = out[-2].split()
-        if len(prev) >= 2:
-            merged = prev[-1] + " " + out[-1]
-            if d.textlength(merged, font=font) <= maxw:
-                out[-1] = merged; out[-2] = " ".join(prev[:-1])
+        if len(prev) >= 2 and d.textlength(prev[-1] + " " + out[-1], font=font) <= maxw:
+            out[-1] = prev[-1] + " " + out[-1]; out[-2] = " ".join(prev[:-1])
     return out
 
 def _para(d, text, font, x, y, maxw, fill, lh=_DLH):
