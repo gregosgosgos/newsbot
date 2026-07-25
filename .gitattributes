@@ -1,0 +1,14 @@
+# 개행(줄바꿈) 통일 — OS 혼용(Windows CRLF / Linux LF)으로 생기는
+# phantom diff와 auto_sync 무한 커밋(churn)을 방지한다. 텍스트는 저장소에 LF로 통일.
+* text=auto eol=lf
+
+# 바이너리는 개행 변환 대상에서 제외
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
