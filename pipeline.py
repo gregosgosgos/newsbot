@@ -16,7 +16,10 @@ from datetime import datetime, timezone, timedelta
 
 from config import CATEGORIES, NEWS_PER_CATEGORY, CATEGORY_HOOK, DEFAULT_HOOK
 from accounts import get_account_credentials, list_active_categories
-from scripts.naver_news import collect_category_news, fetch_article, download_image
+from scripts.naver_news import (
+    collect_category_news, fetch_article, download_image,
+    _content_tokens, topic_overlaps,
+)
 from scripts.rewriter import rewrite_news
 from scripts.image_gen import generate_carousel
 from scripts.instagram_poster import post_carousel, build_carousel_caption
@@ -64,8 +67,9 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
         result["errors"].append("수집된 뉴스 없음"); return result
 
     items = []
+    accepted_tokens = []   # 이미 채택한 뉴스들의 본문 토큰(주제 겹침 방지용)
     examined = 0
-    MAX_EXAMINE = NEWS_PER_CATEGORY + 5   # 광고/스킵 대비 여유 후보 검토
+    MAX_EXAMINE = NEWS_PER_CATEGORY + 8   # 광고/중복/주제겹침 스킵 대비 여유 후보
     for item in candidates:
         if len(items) >= NEWS_PER_CATEGORY or examined >= MAX_EXAMINE:
             break
@@ -77,6 +81,15 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
                 result["errors"].append(f"[스킵] 광고/홍보성: {item['title']}"); continue
             if content.get("is_factual_risk"):
                 result["errors"].append(f"[스킵] 팩트 리스크: {content.get('headline')}"); continue
+            # 주제 겹침 방지: 이미 채택한 뉴스와 본문 핵심어가 상당수 겹치면 스킵
+            # (제목만 다르고 같은 주제를 다루는 기사 배제)
+            toks = _content_tokens(" ".join([
+                item.get("title", ""), content.get("headline", ""),
+                content.get("lead", ""), " ".join(content.get("facts", [])),
+                content.get("background", ""),
+            ]))
+            if any(topic_overlaps(toks, prev) for prev in accepted_tokens):
+                result["errors"].append(f"[스킵] 주제 겹침: {content.get('headline')}"); continue
             photo = download_image(img_url, os.path.join("tmpimg", f"{category_id}_{examined}.jpg"))
             items.append({
                 "headline": content.get("headline", ""),
@@ -90,6 +103,7 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
                 "photo": photo,
                 "source": item.get("link", ""),
             })
+            accepted_tokens.append(toks)
         except Exception as e:
             result["errors"].append(f"{item['title']}: {e}")
 

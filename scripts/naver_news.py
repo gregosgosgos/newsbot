@@ -87,6 +87,37 @@ def _similar(a: str, b: str) -> bool:
     return False
 
 
+# 본문에 흔히 나오지만 주제 구분엔 도움 안 되는 일반어(주제 겹침 판정에서 제외)
+_CONTENT_STOP = _STOP | {
+    "이번", "지난", "올해", "내년", "최근", "당시", "현재", "이후", "이날", "당일",
+    "위해", "대한", "통해", "관련", "대해", "따라", "밝혔", "말했", "전했", "설명",
+    "예정", "계획", "상황", "가운데", "때문", "경우", "이라고", "라고", "한다", "했다",
+    "우리", "국내", "업계", "시장", "기업", "회사", "정부", "지원", "확대", "강화",
+    "추진", "발표", "가능", "필요", "전망", "분석", "이러", "그러", "하지", "하며",
+}
+
+def _content_tokens(text: str) -> set:
+    return {w.lower() for w in re.split(r"[^0-9A-Za-z가-힣]+", str(text))
+            if len(w) >= 2 and w.lower() not in _CONTENT_STOP}
+
+def topic_overlaps(tokens_a: set, tokens_b: set) -> bool:
+    """두 기사의 본문 토큰이 '같은 주제'라 할 만큼 겹치는지 판단.
+
+    제목엔 공통 단어가 없어도(예: '유통업계 생존위기' vs '홈플러스 회생·정치권')
+    본문 핵심어가 상당수 겹치면 독자에겐 비슷한 얘기로 읽힌다. 이를 걸러낸다.
+    """
+    if not tokens_a or not tokens_b:
+        return False
+    inter = tokens_a & tokens_b
+    if not inter:
+        return False
+    jac = len(inter) / len(tokens_a | tokens_b)
+    strong = [w for w in inter if len(w) >= 3]          # 구체 명사(3자+) 겹침
+    # 한국어 표면형 토큰은 신호가 약해, 실측 기준 '3자+ 핵심어 2개 이상'이면 같은 주제로 본다.
+    # (구별돼야 하는 뉴스쌍은 공유 강한토큰이 대개 0개, 겹치는 쌍은 2~3개)
+    return jac >= 0.18 or len(strong) >= 2
+
+
 def collect_category_news(keywords: list, hours_window: int = 20) -> list:
     """화제성(보도량) 기준으로 정렬한 대표 기사 리스트를 반환.
 
