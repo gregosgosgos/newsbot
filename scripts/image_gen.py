@@ -595,31 +595,33 @@ def render_p2(category_id, cat_name, idx, npages, key_stat, facts, background, o
     img.convert("RGB").save(out_path, "JPEG", quality=92)
     return out_path
 
-def render_p3(category_id, cat_name, idx, npages, simple, why, is_last, out_path):
-    """3면 — 쉽게 말하면 + 💡 관전 포인트를 한 덩어리로 묶어 세로 중앙 배치(중간 빈 공간 최소화)."""
+def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_last, out_path):
+    """3면 — (배경 +) 쉽게 말하면 + 💡 관전 포인트. 상단부터 채워 '위 공백'을 없앤다."""
     cat_color, acc, img = _dbase(category_id, 150)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
     _eyebrow(img, d, M, acc, cat_name, idx, 3, npages)
-    SF = _kf(False, 42); SLH = 66
-    slines = _wrap_balanced(d, simple, SF, W-2*M)
-    simple_h = 60 + len(slines)*SLH
-    HW = _kf(True, 34); LHW = 46; txt_x = M+96; txt_maxw = (W-M) - txt_x
+    SF = _kf(False, 37); SLH = 58; BF = _kf(False, 37); BLH = 58
+    HW = _kf(True, 33); LHW = 44; txt_x = M+92; txt_maxw = (W-M) - txt_x
     wlines = _wrap_balanced(d, why, HW, txt_maxw)[:3]
-    box_h = 30 + len(wlines)*LHW + 26
-    GAP = 78
-    # 쉽게 + 💡 를 한 그룹으로 세로 중앙(둘이 붙어 보이게)
-    group = simple_h + GAP + box_h
-    top, bot = 196, H-158
-    y0 = top + max(0, ((bot - top) - group) // 2)
-    y = _section(d, M, "쉽게 말하면", y0, acc)
-    for ln in slines:
-        _draw_hl(d, ln, SF, M, y, _DBODY, acc); y += SLH
-    by = y0 + simple_h + GAP
+    text_h = (len(wlines)-1)*LHW + 34          # 💡 문구 실제 높이
+    box_h = text_h + 64                        # 상하 패딩 32씩
+    if background:   # 배경 + 쉽게 말하면 + 💡 (상단 정렬, 지면 꽉 채움)
+        y = 196
+        y = _section(d, M, "배경", y, acc)
+        y = _para_hl(d, background, BF, M, y, W-2*M, _DBODY, acc, BLH) + 48
+        y = _section(d, M, "쉽게 말하면", y, acc)
+        _para_hl(d, simple, SF, M, y, W-2*M, _DBODY, acc, SLH)
+        by = H - 140 - box_h                   # 💡 하단 고정
+    else:            # 쉽게 말하면 + 💡 (상단 정렬, 💡는 본문 바로 아래)
+        y = 210
+        y = _section(d, M, "쉽게 말하면", y, acc)
+        y = _para_hl(d, simple, SF, M, y, W-2*M, _DBODY, acc, SLH) + 64
+        by = min(y, H - 140 - box_h)
     _glass(img, [M, by, W-M, by+box_h], radius=24, alpha=52)
-    _fa_icon(img, FA_G["lightbulb"], M+46, by+box_h//2, 44, acc)
+    _fa_icon(img, FA_G["lightbulb"], M+44, by+box_h//2, 42, acc)
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([M, by, M+12, by+box_h], radius=6, fill=acc)
-    ty = by + 30
+    ty = by + (box_h - text_h) // 2            # 문구를 박스 세로 중앙에
     for ln in wlines:
         d.text((txt_x, ty), ln, font=HW, fill=(245, 248, 255)); ty += LHW
     _dfoot(d, M, handle, "팔로우하고 매일 받아보기" if is_last else "다음 뉴스 →")
@@ -654,14 +656,16 @@ def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, pre
             nonlocal slide
             slide += 1
             return os.path.join(out_dir, f"{prefix}_{slide}.jpg")
-        if has_photo:   # 1면 사진+헤드라인+리드 / 2면 수치+팩트+배경 / 3면 쉽게+💡
-            p = _p(); render_p1(category_id, cat_name, i, 3, it["headline"], lead, {}, photo, p); paths.append(p)
-            p = _p(); render_p2(category_id, cat_name, i, 3, ks, facts, bg, p); paths.append(p)
-            p = _p(); render_p3(category_id, cat_name, i, 3, simple, why, i == total, p); paths.append(p)
-        else:           # 사진 없음: 수치→1면, 팩트+배경→2면, 쉽게(중앙)→3면
-            p = _p(); render_p1(category_id, cat_name, i, 3, it["headline"], lead, ks, "", p); paths.append(p)
-            p = _p(); render_p2(category_id, cat_name, i, 3, {}, facts, bg, p); paths.append(p)
-            p = _p(); render_p3(category_id, cat_name, i, 3, simple, why, i == total, p); paths.append(p)
+        has_stat = bool(ks.get("value"))
+        # P1: 사진 있으면 사진+헤드라인+리드, 없으면 헤드라인+수치+리드(render_p1이 내부 판단)
+        p = _p(); render_p1(category_id, cat_name, i, 3, it["headline"], lead, ks, photo, p); paths.append(p)
+        # 배경 배치: 사진+수치가 다 있는 흔한 경우엔 3면(상단 채움), 그 외엔 2면(썰렁함 방지)
+        if has_photo and has_stat:
+            p = _p(); render_p2(category_id, cat_name, i, 3, ks, facts, "", p); paths.append(p)
+            p = _p(); render_p3(category_id, cat_name, i, 3, bg, simple, why, i == total, p); paths.append(p)
+        else:
+            p = _p(); render_p2(category_id, cat_name, i, 3, ({} if not has_photo else ks), facts, bg, p); paths.append(p)
+            p = _p(); render_p3(category_id, cat_name, i, 3, "", simple, why, i == total, p); paths.append(p)
     return paths
 
 
