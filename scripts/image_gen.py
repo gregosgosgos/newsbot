@@ -382,6 +382,38 @@ def _wrap_balanced(d, text, font, maxw):
             lo = mid + 1
     return _wrap_words(d, text, font, best)
 
+_CLAUSE_RE = re.compile(r"(?<=[,.!?…])\s+")
+
+def _wrap_smart(d, text, font, maxw):
+    """절(쉼표/마침표) 경계에서 우선 줄바꿈해 자연스러운 호흡으로 읽히게 한다.
+    한 절이 한 줄을 넘을 때만 어절 단위로 나누고, 마지막 줄이 한 어절만 남는
+    '외톨이 줄'은 앞 줄에서 한 어절을 끌어와 방지한다."""
+    out = []
+    for para in str(text).split("\n"):
+        clauses = [c.strip() for c in _CLAUSE_RE.split(para.strip()) if c.strip()]
+        cur = ""
+        for cl in clauses:
+            trial = (cur + " " + cl).strip() if cur else cl
+            if d.textlength(trial, font=font) <= maxw:
+                cur = trial
+            else:
+                if cur:
+                    out.append(cur); cur = ""
+                if d.textlength(cl, font=font) <= maxw:
+                    cur = cl
+                else:
+                    wl = _wrap_words(d, cl, font, maxw)
+                    out.extend(wl[:-1]); cur = wl[-1] if wl else ""
+        if cur:
+            out.append(cur)
+    if len(out) >= 2 and len(out[-1].split()) == 1:   # 외톨이 마지막 줄 방지
+        prev = out[-2].split()
+        if len(prev) >= 2:
+            merged = prev[-1] + " " + out[-1]
+            if d.textlength(merged, font=font) <= maxw:
+                out[-1] = merged; out[-2] = " ".join(prev[:-1])
+    return out
+
 def _para(d, text, font, x, y, maxw, fill, lh=_DLH):
     for ln in _wrap_balanced(d, text, font, maxw):
         d.text((x, y), ln, font=font, fill=fill); y += lh
@@ -423,7 +455,7 @@ def _draw_hl(d, line, font, x, y, base, acc):
         d.text((x, y), line[i:], font=font, fill=base)
 
 def _para_hl(d, text, font, x, y, maxw, base, acc, lh=_DLH):
-    for ln in _wrap_balanced(d, text, font, maxw):
+    for ln in _wrap_smart(d, text, font, maxw):   # 절 경계 우선 줄바꿈(자연스러운 호흡)
         _draw_hl(d, ln, font, x, y, base, acc); y += lh
     return y
 
@@ -529,7 +561,7 @@ def render_p1(category_id, cat_name, idx, npages, headline, lead, key_stat, phot
     d = ImageDraw.Draw(img)
     HF = _kf(True, 60); HLH = int(60*1.28); LF = _kf(False, 37); LLH = 60
     hl_lines = _wrap_words(d, headline, HF, W-2*M)
-    lead_lines = _wrap_balanced(d, lead, LF, W-2*M) if lead else []
+    lead_lines = _wrap_smart(d, lead, LF, W-2*M) if lead else []
     show_stat = (not has_photo) and bool(key_stat) and bool(key_stat.get("value"))
     if has_photo:
         y = 602
@@ -610,7 +642,7 @@ def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_la
     wlines = _wrap_balanced(d, why, HW, txt_maxw)[:3]
     text_h = (len(wlines)-1)*LHW + 34          # 💡 문구 실제 높이
     box_h = text_h + 64                        # 상하 패딩 32씩
-    slines = _wrap_balanced(d, simple, SF, W-2*M)
+    slines = _wrap_smart(d, simple, SF, W-2*M)
     if background:   # 배경 + 쉽게 말하면 + 💡 (상단 정렬, 위→아래로 자연스럽게 채움)
         y = 196
         y = _section(d, M, "배경", y, acc)
