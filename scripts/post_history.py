@@ -29,14 +29,18 @@ def _load() -> dict:
 
 
 def recent_token_sets(category_id: str, days: int = KEEP_DAYS) -> list:
-    """최근 `days`일간 해당 카테고리에 올린 뉴스들의 토큰 집합 리스트."""
+    """'이전 날들'(어제~며칠 전)에 올린 뉴스들의 토큰 집합 리스트.
+
+    오늘(0일 차)은 제외한다 — 같은 하루 안 중복은 실행 중 accepted_tokens가 이미 처리하고,
+    여기서 오늘 것까지 비교하면 하루에 여러 번 실행할 때 뉴스가 과도하게 걸러진다.
+    """
     data = _load(); today = _today(); out = []
     for e in data.get(category_id, []):
         try:
             d = datetime.strptime(e["date"], "%Y-%m-%d").date()
         except Exception:
             continue
-        if 0 <= (today - d).days <= days:
+        if 1 <= (today - d).days <= days:
             out.append(set(e.get("tokens", [])))
     return out
 
