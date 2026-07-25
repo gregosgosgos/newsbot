@@ -605,18 +605,17 @@ def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_la
     wlines = _wrap_balanced(d, why, HW, txt_maxw)[:3]
     text_h = (len(wlines)-1)*LHW + 34          # 💡 문구 실제 높이
     box_h = text_h + 64                        # 상하 패딩 32씩
-    if background:   # 배경 + 쉽게 말하면 + 💡 (상단 정렬, 지면 꽉 채움)
+    if background:   # 배경 + 쉽게 말하면 + 💡 (상단 정렬, 위→아래로 자연스럽게 채움)
         y = 196
         y = _section(d, M, "배경", y, acc)
         y = _para_hl(d, background, BF, M, y, W-2*M, _DBODY, acc, BLH) + 48
         y = _section(d, M, "쉽게 말하면", y, acc)
-        _para_hl(d, simple, SF, M, y, W-2*M, _DBODY, acc, SLH)
-        by = H - 140 - box_h                   # 💡 하단 고정
-    else:            # 쉽게 말하면 + 💡 (상단 정렬, 💡는 본문 바로 아래)
+        y = _para_hl(d, simple, SF, M, y, W-2*M, _DBODY, acc, SLH) + 60
+    else:            # 쉽게 말하면 + 💡 (상단 정렬)
         y = 210
         y = _section(d, M, "쉽게 말하면", y, acc)
         y = _para_hl(d, simple, SF, M, y, W-2*M, _DBODY, acc, SLH) + 64
-        by = min(y, H - 140 - box_h)
+    by = min(y, H - 140 - box_h)               # 💡는 본문 바로 아래(넘치면 하단에 고정)
     _glass(img, [M, by, W-M, by+box_h], radius=24, alpha=52)
     _fa_icon(img, FA_G["lightbulb"], M+44, by+box_h//2, 42, acc)
     d = ImageDraw.Draw(img)
