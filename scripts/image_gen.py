@@ -708,13 +708,10 @@ def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, pre
     paths = []
     cover = os.path.join(out_dir, f"{prefix}_0.jpg")
     heads = [(it["headline"], it.get("subtitle", "")) for it in items]
-    # 표지: 좋은 자료사진이 있으면 사진 표지, 없으면 확성기 표지로 폴백
+    # 표지: 항상 통합 표지 사용(레이아웃 통일). 사진 있으면 배경에 깔고, 없으면 브랜드 그라디언트.
     cover_photo = next((it.get("photo", "") for it in items
                         if it.get("photo") and os.path.exists(it.get("photo", ""))), "")
-    if cover_photo:
-        render_cover_photo(category_id, cat_name, date_str, hook, heads, cover_photo, cover)
-    else:
-        render_cover(category_id, cat_name, date_str, hook, heads, cover)
+    render_cover_photo(category_id, cat_name, date_str, hook, heads, cover_photo, cover)
     paths.append(cover)
     total = len(items)
     slide = 0
