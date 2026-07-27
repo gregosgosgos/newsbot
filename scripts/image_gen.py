@@ -130,6 +130,14 @@ def _fa_icon(img, glyph, cx, cy, size, color):
     col = Image.new("RGBA", (W, H), color+(255,))
     img.paste(col, (0, 0), m)
 
+def _fa_icon_a(img, glyph, cx, cy, size, color, alpha):
+    """반투명 아이콘(표지 워터마크용)."""
+    m = Image.new("L", (W, H), 0); d = ImageDraw.Draw(m); f = _fa(size)
+    bb = d.textbbox((0, 0), glyph, font=f)
+    d.text((cx-(bb[2]-bb[0])/2-bb[0], cy-(bb[3]-bb[1])/2-bb[1]), glyph, font=f, fill=int(alpha))
+    col = Image.new("RGBA", (W, H), tuple(color)+(255,))
+    img.paste(col, (0, 0), m)
+
 
 def _palette(color_hex):
     c = color_hex.lstrip("#"); acc = tuple(int(c[i:i+2], 16) for i in (0, 2, 4))
@@ -230,24 +238,40 @@ def render_cover(category_id, cat_name, date_str, hook, headlines_subs, out_path
 
 
 def render_cover_photo(category_id, cat_name, date_str, hook, headlines_subs, photo, out_path):
-    """사진 표지 — 그날 대표 뉴스 사진을 전면 배경으로, 하단에 제목·후킹·헤드라인 3건.
+    """통합 표지 — 하단에 제목·후킹·헤드라인 3건. 배경은 사진(있으면) 또는 브랜드 그라디언트.
 
-    매일 표지 이미지가 달라져 피드에서 시선을 끈다. 사진은 브랜드 네이비로 컬러그레이드.
-    좋은 사진이 없을 땐 render_cover(확성기 표지)로 폴백한다(generate_carousel에서 분기).
+    표지 레이아웃을 항상 동일하게 유지해(사진 유무와 무관) 피드 톤을 통일한다.
+    사진은 브랜드 네이비로 컬러그레이드, 없으면 딥네이비 그라디언트 + 아이콘 워터마크.
     """
     acc, T, Mid, B = _palette(CATEGORY_COLORS.get(category_id, "#3f7bff"))
     handle = CATEGORY_HANDLE.get(category_id, "@news")
-    ph = _grade_photo(_cover_crop(Image.open(photo).convert("RGB"), W, H))
-    # 스크림: 상단 살짝 + 하단 강하게(네이비)로 하단 텍스트 가독 확보
-    arr = np.asarray(ph).astype(np.float32)
-    yy = np.linspace(0, 1, H)[:, None, None]
-    navy = np.array([8, 13, 28], np.float32)
-    a_top = np.clip((0.20 - yy) / 0.20, 0, 1) * 0.45
-    a_bot = np.clip((yy - 0.30) / 0.34, 0, 1) * 0.90   # 하단 텍스트 영역을 확실히 어둡게
-    a = np.clip(a_top + a_bot, 0, 0.97)
-    arr = arr * (1 - a) + navy * a
-    img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB")
-    img = _glow(img, 150, 1200, 720, acc, 0.15).convert("RGBA")   # 하단 accent 글로우
+    has_photo = bool(photo) and os.path.exists(photo)
+    if has_photo:
+        ph = _grade_photo(_cover_crop(Image.open(photo).convert("RGB"), W, H))
+        # 스크림: 상단 살짝 + 하단 강하게(네이비)로 하단 텍스트 가독 확보
+        arr = np.asarray(ph).astype(np.float32)
+        yy = np.linspace(0, 1, H)[:, None, None]
+        navy = np.array([8, 13, 28], np.float32)
+        a_top = np.clip((0.20 - yy) / 0.20, 0, 1) * 0.45
+        a_bot = np.clip((yy - 0.30) / 0.34, 0, 1) * 0.90   # 하단 텍스트 영역을 확실히 어둡게
+        a = np.clip(a_top + a_bot, 0, 0.97)
+        arr = arr * (1 - a) + navy * a
+        img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB")
+        img = _glow(img, 150, 1200, 720, acc, 0.15).convert("RGBA")   # 하단 accent 글로우
+    else:
+        # 사진 없음: 같은 레이아웃에 브랜드 그라디언트 배경(확성기 폴백 대체)
+        base = _bg(_DBG_T, _DBG_M, _DBG_B)
+        base = _glow(base, 860, 320, 800, _lighten(acc, 0.10), 0.42)   # 상단 accent 글로우
+        base = _glow(base, 150, 1205, 720, acc, 0.18)                  # 하단 accent 글로우
+        img = base.convert("RGBA")
+        icons = CATEGORY_ICONS.get(category_id, ["chart"])
+        _fa_icon_a(img, FA_G.get(icons[0], FA_G["chart"]), 815, 330, 330, _lighten(acc, 0.18), 30)
+        def _sp(cx, cy, r, col):
+            k = .16
+            ImageDraw.Draw(img).polygon(
+                [(cx, cy-r), (cx+r*k, cy-r*k), (cx+r, cy), (cx+r*k, cy+r*k),
+                 (cx, cy+r), (cx-r*k, cy+r*k), (cx-r, cy), (cx-r*k, cy-r*k)], fill=col)
+        _sp(760, 235, 26, (214, 226, 255)); _sp(612, 350, 14, (172, 196, 255))
     d = ImageDraw.Draw(img); M = 84
 
     d.text((M, 74), handle, font=_kf(True, 30), fill=(226, 236, 255))
