@@ -64,15 +64,16 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
     if not creds and not dry_run:
         result["errors"].append("계정 인증정보 없음 (아직 세팅 안 됨) -> 스킵"); return result
 
-    candidates = collect_category_news(cat["keywords"])
+    candidates = collect_category_news(cat["keywords"], hours_window=28)  # 후보 폭 넓힘
     if not candidates:
         result["errors"].append("수집된 뉴스 없음"); return result
 
     items = []
     accepted_tokens = []   # 이미 채택한 뉴스들의 본문 토큰(주제 겹침 방지용)
-    prev_days = recent_token_sets(category_id)   # 최근 1~2일 올린 뉴스 토큰(어제와 중복 방지)
+    spares = []            # 당일 주제 겹침으로 밀렸지만, 3건이 안 되면 채울 예비 후보
+    prev_days = recent_token_sets(category_id)   # 최근 며칠 올린 뉴스 토큰(어제와 중복 방지)
     examined = 0
-    MAX_EXAMINE = NEWS_PER_CATEGORY + 8   # 광고/중복/주제겹침 스킵 대비 여유 후보
+    MAX_EXAMINE = NEWS_PER_CATEGORY + 10   # 광고/중복/주제겹침 스킵 대비 여유 후보(넉넉히)
     for item in candidates:
         if len(items) >= NEWS_PER_CATEGORY or examined >= MAX_EXAMINE:
             break
@@ -89,15 +90,11 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
                 content.get("lead", ""), " ".join(content.get("facts", [])),
                 content.get("background", ""),
             ]))
-            # (1) 하루 안 주제 겹침 방지: 이미 채택한 뉴스와 상당수 겹치면 스킵
-            if any(topic_overlaps(toks, prev) for prev in accepted_tokens):
-                result["errors"].append(f"[스킵] 주제 겹침: {content.get('headline')}"); continue
-            # (2) 어제와 중복 방지(cross-day): '거의 판박이'만 스킵, 진전 있는 후속 기사는 통과
-            #     엄격한 임계값(jac_thr↑, strong_n↑)으로 near-duplicate만 걸러낸다.
+            # 어제와 '거의 판박이'면 완전 제외(진전 있는 후속 기사는 엄격 임계값이라 통과)
             if any(topic_overlaps(toks, prev, jac_thr=0.34, strong_n=4) for prev in prev_days):
                 result["errors"].append(f"[스킵] 어제와 중복: {content.get('headline')}"); continue
             photo = download_image(img_url, os.path.join("tmpimg", f"{category_id}_{examined}.jpg"))
-            items.append({
+            card = {
                 "headline": content.get("headline", ""),
                 "subtitle": content.get("subtitle", ""),
                 "key_stat": content.get("key_stat") or {},
@@ -108,10 +105,20 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
                 "why": content.get("why", ""),
                 "photo": photo,
                 "source": item.get("link", ""),
-            })
-            accepted_tokens.append(toks)
+            }
+            # 당일 주제 겹침이면 바로 버리지 말고 예비로 보관(3건 못 채우면 사용)
+            if any(topic_overlaps(toks, prev) for prev in accepted_tokens):
+                spares.append((card, toks)); continue
+            items.append(card); accepted_tokens.append(toks)
         except Exception as e:
             result["errors"].append(f"{item['title']}: {e}")
+
+    # 서로 다른 주제로 3건을 못 채웠으면, 예비(화제성 순)에서 보충 — "비슷한 1건"보다 "3건"이 낫다
+    for card, toks in spares:
+        if len(items) >= NEWS_PER_CATEGORY:
+            break
+        items.append(card); accepted_tokens.append(toks)
+        result["errors"].append(f"[보충] 주제 유사하나 3건 채우려 포함: {card['headline']}")
 
     # 오늘 채택한 뉴스를 기록에 저장(실게시 때만) → 내일 실행이 어제 중복을 피함
     if not dry_run and items:
