@@ -70,15 +70,16 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
     if not candidates:
         result["errors"].append("수집된 뉴스 없음"); return result
 
-    items = []
-    accepted_tokens = []   # 이미 채택한 뉴스들의 본문 토큰(주제 겹침 방지용)
-    spares = []            # 당일 주제 겹침으로 밀렸지만, 3건이 안 되면 채울 예비 후보
-    weak = []              # 관련도가 애매한(WEAK_MIN~MIN) 후보 — 최후에만 사용
+    # 후보를 '먼저 3건 통과하면 끝'이 아니라 여유 있게 모아두고, 관련도 높은 순으로 고른다.
+    # (화제성 순으로 먼저 걸린 뉴스가 곧 우리 주제에 맞는 뉴스는 아니기 때문)
+    pool = []              # [(rel, card, toks)] — 관련도 WEAK_MIN 이상 후보 전부
     prev_days = recent_token_sets(category_id)   # 최근 며칠 올린 뉴스 토큰(어제와 중복 방지)
     examined = 0
     MAX_EXAMINE = NEWS_PER_CATEGORY + 14   # 광고/중복/주제이탈 스킵 대비 여유 후보(넉넉히)
+    ENOUGH_STRONG = NEWS_PER_CATEGORY + 3  # 확실히 관련 있는 후보가 이만큼 모이면 조기 종료
     for item in candidates:
-        if len(items) >= NEWS_PER_CATEGORY or examined >= MAX_EXAMINE:
+        strong_n = sum(1 for r, _, _ in pool if r >= RELEVANCE_MIN)
+        if strong_n >= ENOUGH_STRONG or examined >= MAX_EXAMINE:
             break
         examined += 1
         try:
@@ -114,29 +115,30 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
                 "photo": photo,
                 "source": item.get("link", ""),
             }
-            # 관련도 애매(45~64) — 정식 채택하지 않고 최후 보충용으로만 보관
-            if rel < RELEVANCE_MIN:
-                weak.append((card, toks, rel)); continue
-            # 당일 주제 겹침이면 바로 버리지 말고 예비로 보관(3건 못 채우면 사용)
-            if any(topic_overlaps(toks, prev) for prev in accepted_tokens):
-                spares.append((card, toks)); continue
-            items.append(card); accepted_tokens.append(toks)
+            pool.append((rel, card, toks))
         except Exception as e:
             result["errors"].append(f"{item['title']}: {e}")
 
-    # 서로 다른 주제로 3건을 못 채웠으면, 예비(화제성 순)에서 보충 — "비슷한 1건"보다 "3건"이 낫다
-    for card, toks in spares:
+    # ── 선별: 관련도 높은 순으로, 주제 겹치는 것만 걸러가며 채운다 ──
+    items, accepted_tokens = [], []
+    leftovers = []   # 관련도는 높지만 이미 뽑은 뉴스와 주제가 겹쳐 밀린 후보
+    for rel, card, toks in sorted(pool, key=lambda x: -x[0]):
         if len(items) >= NEWS_PER_CATEGORY:
             break
+        if rel < RELEVANCE_MIN:
+            continue                      # 애매한 후보는 아래 보충 단계에서만 사용
+        if any(topic_overlaps(toks, prev) for prev in accepted_tokens):
+            leftovers.append((rel, card, toks)); continue
         items.append(card); accepted_tokens.append(toks)
-        result["errors"].append(f"[보충] 주제 유사하나 3건 채우려 포함: {card['headline']}")
 
-    # 그래도 부족하면 관련도가 약한 후보를 점수 높은 순으로 보충(주제 이탈 기사는 이미 배제됨)
-    for card, toks, rel in sorted(weak, key=lambda x: -x[2]):
+    # 부족하면 (1) 주제 겹쳐 밀린 관련도 높은 후보 → (2) 관련도 애매한 후보 순으로 보충
+    backfill = leftovers + [(r, c, t) for r, c, t in sorted(pool, key=lambda x: -x[0])
+                            if r < RELEVANCE_MIN]
+    for rel, card, toks in backfill:
         if len(items) >= NEWS_PER_CATEGORY:
             break
         items.append(card); accepted_tokens.append(toks)
-        result["errors"].append(f"[보충] 관련도 약함({rel}) 포함: {card['headline']}")
+        result["errors"].append(f"[보충] 관련도 {rel}로 채움: {card['headline']}")
 
     # 오늘 채택한 뉴스를 기록에 저장(실게시 때만) → 내일 실행이 어제 중복을 피함
     if not dry_run and items:

@@ -190,7 +190,7 @@ CATEGORY_SCOPE = {
 DEFAULT_SCOPE = {"reader": "일반 독자", "include": "해당 카테고리와 직접 관련된 뉴스", "exclude": "무관한 분야의 뉴스"}
 # relevance 임계값: 이 점수 이상만 정식 채택. 그 아래~WEAK_MIN 사이는 3건 못 채울 때만 보충.
 RELEVANCE_MIN = 65
-RELEVANCE_WEAK_MIN = 45
+RELEVANCE_WEAK_MIN = 55
 
 # ── 계정(카테고리)별 메타 ────────────────────────────────────────────
 CATEGORY_HANDLE = {
