@@ -14,7 +14,8 @@ import argparse
 import logging
 from datetime import datetime, timezone, timedelta
 
-from config import CATEGORIES, NEWS_PER_CATEGORY, CATEGORY_HOOK, DEFAULT_HOOK
+from config import (CATEGORIES, NEWS_PER_CATEGORY, CATEGORY_HOOK, DEFAULT_HOOK,
+                    RELEVANCE_MIN, RELEVANCE_WEAK_MIN)
 from accounts import get_account_credentials, list_active_categories
 from scripts.naver_news import (
     collect_category_news, fetch_article, download_image,
@@ -72,20 +73,26 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
     items = []
     accepted_tokens = []   # 이미 채택한 뉴스들의 본문 토큰(주제 겹침 방지용)
     spares = []            # 당일 주제 겹침으로 밀렸지만, 3건이 안 되면 채울 예비 후보
+    weak = []              # 관련도가 애매한(WEAK_MIN~MIN) 후보 — 최후에만 사용
     prev_days = recent_token_sets(category_id)   # 최근 며칠 올린 뉴스 토큰(어제와 중복 방지)
     examined = 0
-    MAX_EXAMINE = NEWS_PER_CATEGORY + 10   # 광고/중복/주제겹침 스킵 대비 여유 후보(넉넉히)
+    MAX_EXAMINE = NEWS_PER_CATEGORY + 14   # 광고/중복/주제이탈 스킵 대비 여유 후보(넉넉히)
     for item in candidates:
         if len(items) >= NEWS_PER_CATEGORY or examined >= MAX_EXAMINE:
             break
         examined += 1
         try:
             body, img_url = fetch_article(item.get("link", ""))
-            content = rewrite_news(item["title"], item["description"], body, cat_name)
+            content = rewrite_news(item["title"], item["description"], body, cat_name, category_id)
             if content.get("is_promotional"):
                 result["errors"].append(f"[스킵] 광고/홍보성: {item['title']}"); continue
             if content.get("is_factual_risk"):
                 result["errors"].append(f"[스킵] 팩트 리스크: {content.get('headline')}"); continue
+            rel = content.get("relevance", 0)
+            if rel < RELEVANCE_WEAK_MIN:   # 주제 자체가 다른 기사 — 완전 배제
+                result["errors"].append(
+                    f"[스킵] 주제 이탈({rel}): {item['title']} / {content.get('relevance_reason','')}")
+                continue
             toks = _content_tokens(" ".join([
                 item.get("title", ""), content.get("headline", ""),
                 content.get("lead", ""), " ".join(content.get("facts", [])),
@@ -107,6 +114,9 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
                 "photo": photo,
                 "source": item.get("link", ""),
             }
+            # 관련도 애매(45~64) — 정식 채택하지 않고 최후 보충용으로만 보관
+            if rel < RELEVANCE_MIN:
+                weak.append((card, toks, rel)); continue
             # 당일 주제 겹침이면 바로 버리지 말고 예비로 보관(3건 못 채우면 사용)
             if any(topic_overlaps(toks, prev) for prev in accepted_tokens):
                 spares.append((card, toks)); continue
@@ -120,6 +130,13 @@ def generate_content_for_category(category_id: str, dry_run: bool) -> dict:
             break
         items.append(card); accepted_tokens.append(toks)
         result["errors"].append(f"[보충] 주제 유사하나 3건 채우려 포함: {card['headline']}")
+
+    # 그래도 부족하면 관련도가 약한 후보를 점수 높은 순으로 보충(주제 이탈 기사는 이미 배제됨)
+    for card, toks, rel in sorted(weak, key=lambda x: -x[2]):
+        if len(items) >= NEWS_PER_CATEGORY:
+            break
+        items.append(card); accepted_tokens.append(toks)
+        result["errors"].append(f"[보충] 관련도 약함({rel}) 포함: {card['headline']}")
 
     # 오늘 채택한 뉴스를 기록에 저장(실게시 때만) → 내일 실행이 어제 중복을 피함
     if not dry_run and items:

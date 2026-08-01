@@ -9,7 +9,7 @@ import json
 import re
 import google.generativeai as genai
 
-from config import GEMINI_API_KEY
+from config import GEMINI_API_KEY, CATEGORY_SCOPE, DEFAULT_SCOPE
 
 MODEL_NAME = "gemini-3.1-flash-lite"
 
@@ -29,10 +29,24 @@ SYSTEM_PROMPT = """너는 한국어 뉴스 큐레이션 카드뉴스 작가다.
   "simple": "핵심을 비유나 쉬운 말로 풀어 4~5문장으로 (총 170자 내외). 왜 그런지·그래서 뭐가 달라지는지·독자에게 어떤 의미인지까지 친절하게 채워서",
   "why": "{category_context} 독자가 눈여겨볼 관전 포인트를 한 문장 힌트로. '~하세요' 같은 직접 지시는 금지. 앞으로 무엇이 달라질지·지켜볼 지점을 은근하게 (예: '~ 흐름을 눈여겨볼 만합니다', '~ 여부가 관건입니다'). 45자 이내",
   "is_factual_risk": false,
-  "is_promotional": false
+  "is_promotional": false,
+  "relevance": 0,
+  "relevance_reason": "그렇게 점수를 준 이유 20자 이내"
 }
 
+이 계정의 주제 범위(관련도 판정 기준):
+- 독자: {scope_reader}
+- 다루는 것: {scope_include}
+- 다루지 않는 것: {scope_exclude}
+
 주의사항:
+- relevance(가장 중요): 위 '독자'가 이 기사를 보고 "내 일과 관련 있다"고 느낄 정도를 0~100으로 매겨라.
+  · 90~100: 이 독자를 직접 겨냥한 뉴스(예: 이커머스 계정에 쿠팡 수수료 개편)
+  · 65~89: 독자의 사업 환경에 실질적 영향을 주는 뉴스
+  · 45~64: 같은 업계 언저리지만 독자와 연결이 약한 뉴스
+  · 0~44: '다루지 않는 것'에 해당하거나 주제가 완전히 다른 뉴스
+  검색 키워드가 우연히 걸린 기사(지자체 인사·행사, 연예/스포츠, 무관한 산업의 실적 등)는
+  본문에 키워드가 몇 번 나오더라도 40점 이하로 낮게 매겨라. 후하게 주지 말 것.
 - 말투(lead·background·simple): '~습니다. ~습니다. ~습니다.'처럼 짧은 문장이 뚝뚝 끊기지 않게 하라.
   · 연결어미(~며, ~고, ~는데, ~면서, ~어/아서 등)와 쉼표로 자연스럽게 이어 읽기 편한 호흡을 만들 것.
   · 한 문단이 전부 똑같은 종결어미로 끝나지 않게 길이와 리듬을 다양하게.
@@ -62,15 +76,20 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
-def rewrite_news(title: str, description: str, body: str, category_context: str) -> dict:
+def rewrite_news(title: str, description: str, body: str, category_context: str,
+                 category_id: str = "") -> dict:
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
 
+    scope = CATEGORY_SCOPE.get(category_id, DEFAULT_SCOPE)
+    prompt = (SYSTEM_PROMPT
+              .replace("{category_context}", category_context)
+              .replace("{scope_reader}", scope["reader"])
+              .replace("{scope_include}", scope["include"])
+              .replace("{scope_exclude}", scope["exclude"]))
+
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel(
-        MODEL_NAME,
-        system_instruction=SYSTEM_PROMPT.replace("{category_context}", category_context),
-    )
+    model = genai.GenerativeModel(MODEL_NAME, system_instruction=prompt)
 
     parts = [f"제목: {title}", f"요약: {description}"]
     if body:
@@ -87,6 +106,10 @@ def rewrite_news(title: str, description: str, body: str, category_context: str)
     except (json.JSONDecodeError, AttributeError) as e:
         raise RuntimeError(f"Gemini 응답 JSON 파싱 실패: {e}\n원본 응답: {getattr(response, 'text', None)}")
 
+    try:
+        parsed["relevance"] = int(float(parsed.get("relevance", 0)))
+    except (TypeError, ValueError):
+        parsed["relevance"] = 0
     parsed["_original_title"] = title
     return parsed
 
@@ -97,5 +120,6 @@ if __name__ == "__main__":
         description="자영업자 단체들이 배달앱 3사에 수수료 인하를 공동 요청했다고 19일 밝혔다.",
         body="",
         category_context="식품/외식업",
+        category_id="food_industry",
     )
     print(json.dumps(sample, ensure_ascii=False, indent=2))
