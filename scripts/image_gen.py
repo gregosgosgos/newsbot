@@ -13,6 +13,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 from config import (CATEGORY_COLORS, CATEGORY_HANDLE, CATEGORY_ICONS,
+                    CATEGORY_LEAD, DEFAULT_LEAD, CATEGORY_LABEL,
                     ASSETS_DIR, KR_BOLD, KR_REG, KR_INDEX, FA_PATH, NUM_PATH)
 
 W, H = 1080, 1350
@@ -191,7 +192,7 @@ def render_cover(category_id, cat_name, date_str, hook, headlines_subs, out_path
 
     # 후킹 ("N가지 핵심"이 있으면 흰색+언더라인 강조)
     hy = 470; nb = (200, 214, 245); F = _kf(True, 38); Fe = _kf(True, 40)
-    m = re.search(r"\d+가지\s*핵심", hook)
+    m = re.search(r"핵심\s*\d+가지|\d+가지\s*핵심", hook)   # 두 어순 모두 밑줄 강조
     if m:
         pre, seg, post = hook[:m.start()], m.group(), hook[m.end():]
         hx = _tracked(d, pre, F, M, hy, nb, -1.5)
@@ -277,15 +278,19 @@ def render_cover_photo(category_id, cat_name, date_str, hook, headlines_subs, ph
     d.text((M, 74), handle, font=_kf(True, 30), fill=(226, 236, 255))
     d.text((W-M, 90), date_str, font=_kf(False, 30), fill=(212, 224, 250), anchor="rm")
 
+    # 제목 = 독자 호칭(작게) + "오늘의 뉴스"(크게).
+    # 산업분류 라벨(name_kr)을 그대로 쓰면 분류표처럼 읽혀서, 누구를 위한 뉴스인지를 앞세운다.
+    lead = CATEGORY_LEAD.get(category_id, DEFAULT_LEAD)
+    _tracked(d, lead, _kf(True, 46), M, 616, (168, 196, 255), -1.0)
+
     TF = _kf(True, 88); TR = -4
-    _grad_text(img, "오늘의", TF, M, 612, (240, 245, 255), (150, 180, 255), TR)
-    _grad_text(img, cat_name, TF, M, 712, (150, 180, 255), (70, 120, 255), TR)
+    _grad_text(img, "오늘의", TF, M, 684, (240, 245, 255), (150, 180, 255), TR)
     d = ImageDraw.Draw(img)
-    x2 = M + _tw(d, cat_name, TF, TR) + 30
-    _tracked(d, "뉴스", TF, x2, 712, (255, 255, 255), TR)
+    x2 = M + _tw(d, "오늘의", TF, TR) + 18
+    _tracked(d, "뉴스", TF, x2, 684, (255, 255, 255), TR)
 
     hy = 836; nb = (212, 224, 250); F = _kf(True, 36); Fe = _kf(True, 38)
-    m = re.search(r"\d+가지\s*핵심", hook)
+    m = re.search(r"핵심\s*\d+가지|\d+가지\s*핵심", hook)   # 두 어순 모두 밑줄 강조
     if m:
         pre, seg, post = hook[:m.start()], m.group(), hook[m.end():]
         hx = _tracked(d, pre, F, M, hy, nb, -1.5)
@@ -451,9 +456,10 @@ def _dots(d, x_right, cy, n, cur, acc):
         cx = x_right - (n - 1 - i) * gap
         d.ellipse([cx-r, cy-r, cx+r, cy+r], fill=acc if i == cur else (66, 86, 126))
 
-def _eyebrow(img, d, M, acc, cat_name, idx, page, npages):
+def _eyebrow(img, d, M, acc, cat_name, idx, page, npages, category_id=""):
+    label = CATEGORY_LABEL.get(category_id) or cat_name
     d.ellipse([M, 90, M+15, 105], fill=acc)
-    d.text((M+30, 82), f"{cat_name}   ·   NEWS {idx}", font=_kf(True, 27), fill=(150, 172, 212))
+    d.text((M+30, 82), f"{label}   ·   NEWS {idx}", font=_kf(True, 27), fill=(150, 172, 212))
     _dots(d, W-M, 98, npages, page-1, acc)
 
 def _section(d, M, label, y, acc):
@@ -579,7 +585,7 @@ def render_p1(category_id, cat_name, idx, npages, headline, lead, key_stat, phot
     """1면 — 사진 + 헤드라인 + 리드(standfirst). 사진이 없으면 헤드라인+수치+리드로 지면을 채운다."""
     cat_color, acc, img = _dbase(category_id, 150)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
-    _eyebrow(img, d, M, acc, cat_name, idx, 1, npages)
+    _eyebrow(img, d, M, acc, cat_name, idx, 1, npages, category_id)
     has_photo = bool(photo) and os.path.exists(photo) and _photo_band(img, [M, 150, W-M, 540], photo)
     d = ImageDraw.Draw(img)
     HF = _kf(True, 60); HLH = int(60*1.28); LF = _kf(False, 37); LLH = 60
@@ -616,7 +622,7 @@ def render_p2(category_id, cat_name, idx, npages, key_stat, facts, background, o
     """2면 — 핵심 수치(패널) + 핵심 팩트 + 배경. 상단부터 채워 지면을 꽉 채운다."""
     cat_color, acc, img = _dbase(category_id, 930)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
-    _eyebrow(img, d, M, acc, cat_name, idx, 2, npages)
+    _eyebrow(img, d, M, acc, cat_name, idx, 2, npages, category_id)
     FF = _kf(True, 37); FLH = 50; FGAP = 40; fx = M+54; fw = W-fx-M; NF = _nf(34)
     BF = _kf(False, 37); BLH = 58
     flist = facts[:3]
@@ -659,7 +665,7 @@ def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_la
     """3면 — (배경 +) 쉽게 말하면 + 💡 관전 포인트. 상단부터 채워 '위 공백'을 없앤다."""
     cat_color, acc, img = _dbase(category_id, 150)
     d = ImageDraw.Draw(img); M = 88; handle = CATEGORY_HANDLE.get(category_id, "@news")
-    _eyebrow(img, d, M, acc, cat_name, idx, 3, npages)
+    _eyebrow(img, d, M, acc, cat_name, idx, 3, npages, category_id)
     SF = _kf(False, 37); SLH = 58; BF = _kf(False, 37); BLH = 58
     HW = _kf(True, 33); LHW = 44; txt_x = M+92; txt_maxw = (W-M) - txt_x
     wlines = _wrap_balanced(d, why, HW, txt_maxw)[:3]

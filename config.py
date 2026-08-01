@@ -192,6 +192,22 @@ DEFAULT_SCOPE = {"reader": "일반 독자", "include": "해당 카테고리와 �
 RELEVANCE_MIN = 65
 RELEVANCE_WEAK_MIN = 55
 
+# ── 표지에 '보이는' 이름 ────────────────────────────────────────────
+# name_kr("식품/외식업")은 25개 카테고리를 관리하려고 만든 내부 산업분류 라벨이라
+# 표지 제목으로 쓰면 분류표처럼 읽힌다. 독자 호칭을 앞세운 표기를 따로 둔다.
+#   표지 = "{CATEGORY_LEAD}\n오늘의 뉴스",  상세 눈썹 = "{CATEGORY_LABEL} · NEWS 1"
+CATEGORY_LEAD = {
+    "food_industry": "외식 사장님을 위한",
+    "ecommerce": "온라인 셀러를 위한",
+    "startup": "사장님을 위한",
+}
+DEFAULT_LEAD = "오늘 챙길"
+CATEGORY_LABEL = {
+    "food_industry": "외식업",
+    "ecommerce": "이커머스",
+    "startup": "자영업",
+}
+
 # ── 계정(카테고리)별 메타 ────────────────────────────────────────────
 CATEGORY_HANDLE = {
     "food_industry": "@food_industry_news",
@@ -205,12 +221,14 @@ CATEGORY_ICONS = {
     "ecommerce": ["doc", "rocket", "chart"],
 }
 # 표지 후킹 문구 (계정 성격에 맞춘 고정 슬로건)
+# 업종은 핸들·아이콘·색·제목("외식 사장님을 위한")이 이미 말해주므로 훅에 넣지 않는다.
+# 훅은 '왜 읽어야 하나 + 몇 개인가'만. ('3가지 핵심'보다 '핵심 3가지'가 자연스러운 어순)
 CATEGORY_HOOK = {
-    "food_industry": "바쁜 사장님이 놓치면 안 될 3가지 핵심",
-    "startup": "창업·자영업 오늘의 핵심 3가지",
-    "ecommerce": "오늘 셀러가 놓치면 안 될 3가지 핵심 이슈",
+    "food_industry": "놓치면 안 될 핵심 3가지",
+    "startup": "놓치면 안 될 핵심 3가지",
+    "ecommerce": "놓치면 안 될 핵심 3가지",
 }
-DEFAULT_HOOK = "오늘 꼭 알아야 할 핵심 3가지"
+DEFAULT_HOOK = "놓치면 안 될 핵심 3가지"
 
 # 카테고리별 브랜드 컬러 (계정마다 시각적 아이덴티티 구분)
 CATEGORY_COLORS = {
