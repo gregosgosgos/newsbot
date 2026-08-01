@@ -21,6 +21,7 @@ from scripts.naver_news import (
     _content_tokens, topic_overlaps,
 )
 from scripts.post_history import recent_token_sets, append_today
+from scripts.caption_gen import generate_caption
 from scripts.rewriter import rewrite_news
 from scripts.image_gen import generate_carousel
 from scripts.instagram_poster import post_carousel, build_carousel_caption
@@ -146,7 +147,7 @@ def publish_category(category_id: str, generated: dict) -> dict:
         return log
     cat_name = CATEGORIES[category_id]["name_kr"]
     urls = [build_image_public_url(os.path.basename(p)) for p in generated["paths"]]
-    caption = build_carousel_caption(cat_name, generated["items"])
+    caption = generate_caption(category_id, cat_name, generated["items"])   # 새 스펙 기반 캡션
     res = post_carousel(creds["ig_user_id"], creds["access_token"], urls, caption)
     if res["success"]:
         log["posted"] = 1
