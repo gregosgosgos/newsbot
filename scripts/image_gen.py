@@ -708,6 +708,307 @@ def render_p3(category_id, cat_name, idx, npages, background, simple, why, is_la
     return out_path
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  LIGHT SYSTEM — taste-skill(anti-slop) 규칙을 적용한 밝은 지면 디자인
+#
+#  이전(다크) 디자인이 위반하던 것들:
+#   · 네온/아우터 글로우 남발            → §9.A 금지
+#   · 대형 제목 그라디언트 텍스트        → §9.A 금지
+#   · 순검정 대신 딥네이비 그라디언트 바탕 → "AI 블루 글로우" §4.2
+#   · 라운드 반경 22/24/27/44/50 혼용    → §4.4 SHAPE CONSISTENCY LOCK 위반
+#   · 모든 면에 아이브로 + 섹션 라벨      → §4.7 EYEBROW RESTRAINT 위반
+#   · 장식용 글래스 카드                 → §4.4 "카드는 실제 위계가 있을 때만"
+#
+#  새 규칙(전 페이지 공통 잠금):
+#   · 지면 = 오프화이트, 잉크 = 오프블랙(순검정 금지)
+#   · 액센트 1개만, 채도 눌러서 사용 (§4.2 COLOR CONSISTENCY LOCK)
+#   · 라운드 반경은 _R 하나로 통일. 알약형은 '넘겨서 보기' CTA 단 하나만
+#   · 구분은 그림자가 아니라 헤어라인 + 여백으로 (§4.4)
+#   · 카드는 한 면에 최대 1개(💡 인사이트처럼 실제 위계가 있을 때만)
+# ══════════════════════════════════════════════════════════════════════
+_R      = 20                      # 유일한 라운드 반경
+_PAPER  = (251, 251, 252)
+_INK    = (22, 23, 26)            # 오프블랙 (#000 금지)
+_INK2   = (99, 105, 116)
+_INK3   = (150, 156, 166)
+_HAIR   = (228, 231, 236)
+_SOFT   = (244, 246, 249)
+
+
+def _hexc(c):
+    c = c.lstrip("#")
+    return tuple(int(c[i:i+2], 16) for i in (0, 2, 4))
+
+def _mixc(a, b, t):
+    return tuple(int(a[i] + (b[i]-a[i])*t) for i in range(3))
+
+def _acc_l(category_id):
+    """액센트 — 채도를 눌러 중성 지면과 어울리게, 흰 바탕에서 읽히게 명도 보정."""
+    c = _hexc(CATEGORY_COLORS.get(category_id, "#2563EB"))
+    g = sum(c) / 3
+    c = tuple(int(g + (v - g) * 0.78) for v in c)          # 채도 78%
+    lum = 0.299*c[0] + 0.587*c[1] + 0.114*c[2]
+    if lum > 142:                                          # 밝으면 눌러서 대비 확보
+        k = min(0.5, (lum - 142) / 240 + 0.16)
+        c = tuple(int(v * (1 - k)) for v in c)
+    return c
+
+
+def _grade_l(ph):
+    """밝은 지면용 그레이딩 — 살짝 탈채도 + 대비 정리. 어둡게 죽이지 않는다."""
+    arr = np.asarray(ph.convert("RGB")).astype(np.float32)
+    gray = arr @ np.array([0.299, 0.587, 0.114], np.float32)
+    arr = arr * 0.88 + gray[..., None] * 0.12
+    arr = (arr - 128) * 1.05 + 132
+    return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB")
+
+
+def _photo_l(img, box, photo_path, radius=_R, corners=(1, 1, 1, 1)):
+    x0, y0, x1, y1 = [int(v) for v in box]; bw, bh = x1-x0, y1-y0
+    try:
+        ph = _grade_l(_cover_crop(Image.open(photo_path).convert("RGB"), bw, bh))
+    except Exception:
+        return False
+    m = Image.new("L", (bw, bh), 0); md = ImageDraw.Draw(m)
+    md.rounded_rectangle([0, 0, bw-1, bh-1], radius=radius, fill=255)
+    if radius:
+        if not corners[0]: md.rectangle([0, 0, radius, radius], fill=255)
+        if not corners[1]: md.rectangle([bw-radius, 0, bw, radius], fill=255)
+        if not corners[2]: md.rectangle([bw-radius, bh-radius, bw, bh], fill=255)
+        if not corners[3]: md.rectangle([0, bh-radius, radius, bh], fill=255)
+    img.paste(ph.convert("RGBA"), (x0, y0), m)
+    return True
+
+
+def _hero_blank_l(img, category_id, acc, h):
+    """사진이 없을 때 표지 상단 — 그라디언트 대신 '단색 옅은 틴트' + 카테고리 글리프."""
+    tint = _mixc(acc, (255, 255, 255), 0.88)
+    ImageDraw.Draw(img).rectangle([0, 0, W, h], fill=tint)
+    icons = CATEGORY_ICONS.get(category_id, ["chart"])
+    _fa_icon_a(img, FA_G.get(icons[0], FA_G["chart"]), W - 236, h//2 - 40, 300,
+               _mixc(acc, (255, 255, 255), 0.52), 235)
+
+
+def _sheet_l(img, y):
+    """본문 시트 — 사진 위로 지면이 올라오는 구조(상단만 라운드)."""
+    sh = Image.new("RGBA", (W, H - y), _PAPER + (255,))
+    m = Image.new("L", (W, H - y), 0); md = ImageDraw.Draw(m)
+    md.rounded_rectangle([0, 0, W-1, H-y-1], radius=_R, fill=255)
+    md.rectangle([0, H-y-_R, W, H-y], fill=255)
+    img.paste(sh, (0, y), m)
+
+
+def _meta_l(d, M, acc, category_id, cat_name, idx, page, npages):
+    """상세면 상단 메타 — 아이브로는 면당 1개만(§4.7). 진행표시는 얇은 세그먼트."""
+    label = CATEGORY_LABEL.get(category_id) or cat_name
+    d.text((M, 74), f"{label}  ·  NEWS {idx}", font=_kf(True, 26), fill=_INK3)
+    sw, gap = 24, 8
+    x = W - M - (npages*sw + (npages-1)*gap)
+    for i in range(npages):
+        d.rounded_rectangle([x, 86, x+sw, 91], radius=2,
+                            fill=acc if i == page-1 else (223, 227, 233))
+        x += sw + gap
+
+
+def _label_l(d, M, text, y):
+    """섹션 라벨 — 장식 틱 없이 톤만 낮춰서. 한 면에 최대 1~2개."""
+    _tracked(d, text, _kf(True, 27), M, y, _INK3, 0.8)
+    return y + 50
+
+
+def _foot_l(d, M, handle, tail, acc):
+    d.line([(M, H-106), (W-M, H-106)], fill=_HAIR, width=2)
+    d.text((M, H-60), handle, font=_kf(True, 29), fill=_INK3, anchor="lm")
+    d.text((W-M, H-60), tail, font=_kf(True, 28), fill=acc, anchor="rm")
+
+
+def _page_l(category_id):
+    acc = _acc_l(category_id)
+    img = Image.new("RGBA", (W, H), _PAPER + (255,))
+    return acc, img
+
+
+def render_cover_l(category_id, cat_name, date_str, hook, headlines_subs, photo, out_path):
+    """표지 — 풀블리드 사진 + 지면 시트. 텍스트 요소는 4개 이하로 제한(§4.7 히어로 규율)."""
+    acc = _acc_l(category_id); M = 80
+    handle = CATEGORY_HANDLE.get(category_id, "@news")
+    img = Image.new("RGBA", (W, H), _PAPER + (255,))
+    PH = 600
+    has_photo = bool(photo) and os.path.exists(photo) and _photo_l(img, [0, 0, W, PH], photo, 0)
+    if not has_photo:
+        _hero_blank_l(img, category_id, acc, PH)
+
+    if has_photo:   # 사진 위 텍스트는 스크림으로 대비 확보(§4.5)
+        sc = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ImageDraw.Draw(sc).rectangle([0, 0, W, 190], fill=(0, 0, 0, 92))
+        img.alpha_composite(sc.filter(ImageFilter.GaussianBlur(44)))
+        hc, dc = (255, 255, 255), (228, 233, 241)
+    else:
+        hc = dc = _mixc(acc, (0, 0, 0), 0.12)
+    d = ImageDraw.Draw(img)
+    d.text((M, 62), handle, font=_kf(True, 27), fill=hc)
+    d.text((W-M, 76), date_str, font=_kf(False, 27), fill=dc, anchor="rm")
+
+    _sheet_l(img, 548); d = ImageDraw.Draw(img)
+
+    y = 618
+    d.text((M, y), CATEGORY_LEAD.get(category_id, DEFAULT_LEAD), font=_kf(True, 33), fill=acc)
+    _tracked(d, "오늘의 뉴스", _kf(True, 94), M, y + 56, _INK, -3.0)
+    d.text((M, y + 186), hook, font=_kf(False, 31), fill=_INK2)
+
+    y = 866
+    d.line([M, y, W-M, y], fill=_HAIR, width=2)
+    y += 34
+    NF = _nf(25); CF = _kf(True, 39)
+    for i, (hl, sub) in enumerate(headlines_subs[:3]):
+        d.text((M, y + 10), str(i+1), font=NF, fill=acc)
+        d.text((M+48, y), _fit(d, hl, CF, (W-M) - (M+48), -0.5), font=CF, fill=_INK)
+        y += 74
+        if i < len(headlines_subs[:3]) - 1:
+            d.line([M+48, y - 18, W-M, y - 18], fill=_HAIR, width=2)
+
+    cta = "넘겨서 자세히 보기"; cf = _kf(True, 37)
+    d.text((M, H-112), cta, font=cf, fill=acc)
+    d.text((M + d.textlength(cta, font=cf) + 14, H-112), "→", font=cf, fill=acc)
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    img.convert("RGB").save(out_path, "JPEG", quality=93)
+    return out_path
+
+
+def render_p1_l(category_id, cat_name, idx, npages, headline, lead, key_stat, photo, out_path):
+    """1면 — 사진 + 헤드라인 + 리드. 사진이 없으면 수치를 히어로로 올린다."""
+    acc, img = _page_l(category_id); d = ImageDraw.Draw(img); M = 80
+    handle = CATEGORY_HANDLE.get(category_id, "@news")
+    _meta_l(d, M, acc, category_id, cat_name, idx, 1, npages)
+
+    has_photo = bool(photo) and os.path.exists(photo) and _photo_l(img, [M, 136, W-M, 536], photo)
+    d = ImageDraw.Draw(img)
+    HF = _kf(True, 56); HLH = 76; LF = _kf(False, 35); LLH = 56
+    hl_lines = _wrap_words(d, headline, HF, W-2*M)
+    lead_lines = _wrap_smart(d, lead, LF, W-2*M) if lead else []
+    show_stat = (not has_photo) and bool(key_stat) and bool(key_stat.get("value"))
+
+    # 여백 분배 — 남는 공간을 블록 사이에 고르게 나눠 '아래가 텅 비는' 현상을 막는다(§9.C)
+    STAT_H = 168
+    if has_photo:
+        y = 594; g1 = 26; g2 = 32
+    else:
+        block = len(hl_lines)*HLH + (STAT_H if show_stat else 0) + len(lead_lines)*LLH
+        top, bot = 208, H - 168
+        slack = max(0, (bot - top) - block)
+        g1 = 26 + int(min(96, slack * 0.34))          # 헤드라인 ↔ 수치
+        g2 = 32 + int(min(96, slack * 0.34))          # 수치 ↔ 리드
+        y = top + int(min(70, slack * 0.22))
+
+    for ln in hl_lines:
+        _tracked(d, ln, HF, M, y, _INK, -1.6); y += HLH
+    y += g1
+
+    if show_stat:
+        vf = _kf(True, 84); val = str(key_stat["value"])
+        vb = d.textbbox((0, 0), val, font=vf)
+        d.text((M, y - vb[1]), val, font=vf, fill=acc)
+        ly = (y - vb[1]) + vb[3] + 20
+        d.text((M, ly), str(key_stat.get("label", "")), font=_kf(False, 29), fill=_INK2)
+        y = ly + 68
+
+    if lead:
+        d.line([M, y - 6, W-M, y - 6], fill=_HAIR, width=2)
+        y += g2
+        for ln in lead_lines:
+            _draw_hl(d, ln, LF, M, y, _INK2, acc); y += LLH
+
+    _foot_l(d, M, handle, "핵심 짚어보기 →", acc)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    img.convert("RGB").save(out_path, "JPEG", quality=93)
+    return out_path
+
+
+def render_p2_l(category_id, cat_name, idx, npages, key_stat, facts, background, out_path):
+    """2면 — 수치 + 핵심 팩트 + 배경. 카드 대신 헤어라인/여백으로 구분(§4.4)."""
+    acc, img = _page_l(category_id); d = ImageDraw.Draw(img); M = 80
+    handle = CATEGORY_HANDLE.get(category_id, "@news")
+    _meta_l(d, M, acc, category_id, cat_name, idx, 2, npages)
+
+    y = 168
+    if key_stat and key_stat.get("value"):
+        vf = _kf(True, 76); val = str(key_stat["value"])
+        vb = d.textbbox((0, 0), val, font=vf)
+        d.text((M, y - vb[1]), val, font=vf, fill=acc)
+        ly = (y - vb[1]) + vb[3] + 18
+        lab = str(key_stat.get("label", ""))
+        if lab:
+            d.text((M, ly), lab, font=_kf(False, 28), fill=_INK2); ly += 46
+        y = ly + 40
+        d.line([M, y, W-M, y], fill=_HAIR, width=2); y += 44
+
+    y = _label_l(d, M, "핵심 팩트", y)
+    FF = _kf(True, 37); FLH = 50; NF = _nf(24); fx = M + 46
+    for k, f in enumerate(facts[:3], 1):
+        lines = _wrap_balanced(d, f, FF, W - fx - M)
+        d.text((M, y + 8), str(k), font=NF, fill=acc)
+        yy = y
+        for ln in lines:
+            _draw_hl(d, ln, FF, fx, yy, _INK, acc); yy += FLH
+        y = yy + 30
+        if k < len(facts[:3]):
+            d.line([fx, y - 16, W-M, y - 16], fill=_HAIR, width=2)
+
+    if background:
+        y += 26
+        y = _label_l(d, M, "배경", y)
+        for ln in _wrap_smart(d, background, _kf(False, 35), W-2*M):
+            _draw_hl(d, ln, _kf(False, 35), M, y, _INK2, acc); y += 56
+
+    _foot_l(d, M, handle, "쉽게 풀어보면 →", acc)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    img.convert("RGB").save(out_path, "JPEG", quality=93)
+    return out_path
+
+
+def render_p3_l(category_id, cat_name, idx, npages, background, simple, why, is_last, out_path):
+    """3면 — 쉽게 풀어보면 + 💡 관전 포인트. 카드는 이 면에 '하나만'(실제 위계)."""
+    acc, img = _page_l(category_id); d = ImageDraw.Draw(img); M = 80
+    handle = CATEGORY_HANDLE.get(category_id, "@news")
+    _meta_l(d, M, acc, category_id, cat_name, idx, 3, npages)
+
+    # 이 면은 텍스트가 짧아 아래가 비기 쉽다 → 본문을 크게 키우고 남는 만큼 사이를 벌린다.
+    SF = _kf(False, 42); SLH = 68
+    slines = _wrap_smart(d, simple, SF, W-2*M)
+    HW = _kf(True, 32); LHW = 46
+    tx = M + 78; wlines = _wrap_balanced(d, why, HW, (W-M-32) - tx)[:3]
+    box_h = (len(wlines)-1)*LHW + 34 + 68
+    reserve = 214 if is_last else 148
+
+    block = 50 + len(slines)*SLH + box_h
+    top, bot = 168, H - reserve
+    slack = max(0, (bot - top) - block)
+    y = _label_l(d, M, "쉽게 풀어보면", top + int(min(84, slack * 0.30)))
+    for ln in slines:
+        _draw_hl(d, ln, SF, M, y, _INK, acc); y += SLH
+
+    by = min(y + 54 + int(min(280, slack * 0.78)), H - reserve - box_h)
+    d.rounded_rectangle([M, by, W-M, by+box_h], radius=_R, fill=_SOFT)
+    _fa_icon(img, FA_G["lightbulb"], M+42, by + box_h//2, 38, acc)
+    d = ImageDraw.Draw(img)
+    ty = by + (box_h - ((len(wlines)-1)*LHW + 34)) // 2
+    for ln in wlines:
+        d.text((tx, ty), ln, font=HW, fill=_INK); ty += LHW
+
+    if is_last:
+        ct = "저장해두면 필요할 때 다시 볼 수 있어요"; cf = _kf(True, 27)
+        cw = int(d.textlength(ct, font=cf)); isz = 28; gap = 13
+        cx = (W - (isz + gap + cw)) // 2; cy = H - 164
+        _fa_icon(img, "", cx + isz//2, cy, isz, acc)
+        ImageDraw.Draw(img).text((cx + isz + gap, cy), ct, font=cf, fill=_INK2, anchor="lm")
+
+    _foot_l(d, M, handle, "팔로우하고 매일 아침 받기 →" if is_last else "다음 뉴스 →", acc)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    img.convert("RGB").save(out_path, "JPEG", quality=93)
+    return out_path
+
+
 def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, prefix):
     """items = [{headline, subtitle, lead, facts, background, simple, why, source}] (최대 3).
     반환: [표지, 뉴스1-p1, 뉴스1-p2, 뉴스2-p1, ...] (표지 1 + 뉴스별 2장)."""
@@ -717,7 +1018,7 @@ def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, pre
     # 표지: 항상 통합 표지 사용(레이아웃 통일). 사진 있으면 배경에 깔고, 없으면 브랜드 그라디언트.
     cover_photo = next((it.get("photo", "") for it in items
                         if it.get("photo") and os.path.exists(it.get("photo", ""))), "")
-    render_cover_photo(category_id, cat_name, date_str, hook, heads, cover_photo, cover)
+    render_cover_l(category_id, cat_name, date_str, hook, heads, cover_photo, cover)
     paths.append(cover)
     total = len(items)
     slide = 0
@@ -732,11 +1033,11 @@ def generate_carousel(category_id, cat_name, date_str, hook, items, out_dir, pre
             slide += 1
             return os.path.join(out_dir, f"{prefix}_{slide}.jpg")
         # P1: 사진 있으면 사진+헤드라인+리드, 없으면 헤드라인+수치+리드(render_p1이 내부 판단)
-        p = _p(); render_p1(category_id, cat_name, i, 3, it["headline"], lead, ks, photo, p); paths.append(p)
-        # 2면: 수치(사진 있을 때만 패널)+핵심 팩트+배경 → 지면을 꽉 채움 / 3면: 쉽게+💡
+        p = _p(); render_p1_l(category_id, cat_name, i, 3, it["headline"], lead, ks, photo, p); paths.append(p)
+        # 2면: 수치(사진 있을 때만)+핵심 팩트+배경 / 3면: 쉽게 풀어보면+💡
         p2_stat = ks if has_photo else {}   # 사진 없으면 수치는 이미 1면에 있음
-        p = _p(); render_p2(category_id, cat_name, i, 3, p2_stat, facts, bg, p); paths.append(p)
-        p = _p(); render_p3(category_id, cat_name, i, 3, "", simple, why, i == total, p); paths.append(p)
+        p = _p(); render_p2_l(category_id, cat_name, i, 3, p2_stat, facts, bg, p); paths.append(p)
+        p = _p(); render_p3_l(category_id, cat_name, i, 3, "", simple, why, i == total, p); paths.append(p)
     return paths
 
 
