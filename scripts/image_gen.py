@@ -735,6 +735,30 @@ _HAIR   = (228, 231, 236)
 _SOFT   = (244, 246, 249)
 
 
+_ELL_RE = re.compile(r"\.{3,}|·{3,}")
+
+def _typo(s):
+    """타이포 정리(Vercel Web Interface Guidelines 중 이미지에도 적용되는 항목).
+
+    · 마침표 3개 → 말줄임표 한 글자(…)
+    · 곧은 따옴표 → 둥근 따옴표(여는/닫는 교대)
+    · 중복 공백 정리
+    네이버 기사 제목·Gemini 생성 문장에 둘 다 섞여 들어온다.
+    """
+    if not s:
+        return s
+    s = _ELL_RE.sub("…", str(s))
+    out, dq, sq = [], False, False
+    for ch in s:
+        if ch == '"':
+            out.append("”" if dq else "“"); dq = not dq
+        elif ch == "'":
+            out.append("’" if sq else "‘"); sq = not sq
+        else:
+            out.append(ch)
+    return re.sub(r"[ \t]{2,}", " ", "".join(out)).strip()
+
+
 def _hexc(c):
     c = c.lstrip("#")
     return tuple(int(c[i:i+2], 16) for i in (0, 2, 4))
@@ -830,6 +854,8 @@ def _page_l(category_id):
 
 def render_cover_l(category_id, cat_name, date_str, hook, headlines_subs, photo, out_path):
     """표지 — 풀블리드 사진 + 지면 시트. 텍스트 요소는 4개 이하로 제한(§4.7 히어로 규율)."""
+    hook = _typo(hook)
+    headlines_subs = [(_typo(h), _typo(s)) for h, s in headlines_subs]
     acc = _acc_l(category_id); M = 80
     handle = CATEGORY_HANDLE.get(category_id, "@news")
     img = Image.new("RGBA", (W, H), _PAPER + (255,))
@@ -878,6 +904,8 @@ def render_cover_l(category_id, cat_name, date_str, hook, headlines_subs, photo,
 
 def render_p1_l(category_id, cat_name, idx, npages, headline, lead, key_stat, photo, out_path):
     """1면 — 사진 + 헤드라인 + 리드. 사진이 없으면 수치를 히어로로 올린다."""
+    headline, lead = _typo(headline), _typo(lead)
+    key_stat = {k: _typo(v) for k, v in (key_stat or {}).items()}
     acc, img = _page_l(category_id); d = ImageDraw.Draw(img); M = 80
     handle = CATEGORY_HANDLE.get(category_id, "@news")
     _meta_l(d, M, acc, category_id, cat_name, idx, 1, npages)
@@ -927,6 +955,9 @@ def render_p1_l(category_id, cat_name, idx, npages, headline, lead, key_stat, ph
 
 def render_p2_l(category_id, cat_name, idx, npages, key_stat, facts, background, out_path):
     """2면 — 수치 + 핵심 팩트 + 배경. 카드 대신 헤어라인/여백으로 구분(§4.4)."""
+    key_stat = {k: _typo(v) for k, v in (key_stat or {}).items()}
+    facts = [_typo(f) for f in (facts or [])]
+    background = _typo(background)
     acc, img = _page_l(category_id); d = ImageDraw.Draw(img); M = 80
     handle = CATEGORY_HANDLE.get(category_id, "@news")
     _meta_l(d, M, acc, category_id, cat_name, idx, 2, npages)
@@ -969,6 +1000,7 @@ def render_p2_l(category_id, cat_name, idx, npages, key_stat, facts, background,
 
 def render_p3_l(category_id, cat_name, idx, npages, background, simple, why, is_last, out_path):
     """3면 — 쉽게 풀어보면 + 💡 관전 포인트. 카드는 이 면에 '하나만'(실제 위계)."""
+    simple, why = _typo(simple), _typo(why)
     acc, img = _page_l(category_id); d = ImageDraw.Draw(img); M = 80
     handle = CATEGORY_HANDLE.get(category_id, "@news")
     _meta_l(d, M, acc, category_id, cat_name, idx, 3, npages)
