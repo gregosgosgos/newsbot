@@ -862,40 +862,52 @@ def render_cover_l(category_id, cat_name, date_str, hook, headlines_subs, photo,
     PH = 600
     has_photo = bool(photo) and os.path.exists(photo) and _photo_l(img, [0, 0, W, PH], photo, 0)
     if not has_photo:
-        _hero_blank_l(img, category_id, acc, PH)
+        # 사진 없으면 같은 액센트의 '진한 톤'으로 — 표지가 브랜드 컬러 2단으로 읽힌다
+        deep = _mixc(acc, (12, 13, 16), 0.52)
+        ImageDraw.Draw(img).rectangle([0, 0, W, PH], fill=deep)
+        icons = CATEGORY_ICONS.get(category_id, ["chart"])
+        _fa_icon_a(img, FA_G.get(icons[0], FA_G["chart"]), W-236, PH//2 - 40, 300,
+                   _mixc(acc, (255, 255, 255), 0.30), 120)
 
-    if has_photo:   # 사진 위 텍스트는 스크림으로 대비 확보(§4.5)
-        sc = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        ImageDraw.Draw(sc).rectangle([0, 0, W, 190], fill=(0, 0, 0, 92))
-        img.alpha_composite(sc.filter(ImageFilter.GaussianBlur(44)))
-        hc, dc = (255, 255, 255), (228, 233, 241)
-    else:
-        hc = dc = _mixc(acc, (0, 0, 0), 0.12)
+    # 하단 42%를 브랜드 색으로 꽉 채운다 — 피드 썸네일에서 '색 덩어리'로 먼저 인식돼
+    # 스크롤을 멈추게 하는 게 목적. 매일 같은 색이라 피드 전체 톤도 통일된다.
+    blk = Image.new("RGBA", (W, H-560), tuple(acc) + (255,))
+    mk = Image.new("L", (W, H-560), 0); mkd = ImageDraw.Draw(mk)
+    mkd.rounded_rectangle([0, 0, W-1, H-560-1], radius=_R, fill=255)
+    mkd.rectangle([0, H-560-_R, W, H-560], fill=255)
+    img.paste(blk, (0, 560), mk)
+
+    sc = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(sc).rectangle([0, 0, W, 180], fill=(0, 0, 0, 92))
+    img.alpha_composite(sc.filter(ImageFilter.GaussianBlur(42)))
     d = ImageDraw.Draw(img)
-    d.text((M, 62), handle, font=_kf(True, 27), fill=hc)
-    d.text((W-M, 76), date_str, font=_kf(False, 27), fill=dc, anchor="rm")
+    d.text((M, 62), handle, font=_kf(True, 27), fill=(255, 255, 255))
+    d.text((W-M, 76), date_str, font=_kf(False, 27), fill=(230, 234, 241), anchor="rm")
 
-    _sheet_l(img, 548); d = ImageDraw.Draw(img)
+    wsoft = _mixc(acc, (255, 255, 255), 0.72)   # 색 블록 위 보조 텍스트
+    line = _mixc(acc, (255, 255, 255), 0.28)    # 색 블록 위 구분선
 
-    y = 618
-    d.text((M, y), CATEGORY_LEAD.get(category_id, DEFAULT_LEAD), font=_kf(True, 33), fill=acc)
-    _tracked(d, "오늘의 뉴스", _kf(True, 94), M, y + 56, _INK, -3.0)
-    d.text((M, y + 186), hook, font=_kf(False, 31), fill=_INK2)
+    y = 628
+    d.text((M, y), CATEGORY_LEAD.get(category_id, DEFAULT_LEAD), font=_kf(True, 33), fill=wsoft)
+    _tracked(d, "오늘의 뉴스", _kf(True, 96), M, y + 56, (255, 255, 255), -3.0)
+    d.text((M, y + 190), hook, font=_kf(False, 31), fill=wsoft)
 
-    y = 866
-    d.line([M, y, W-M, y], fill=_HAIR, width=2)
+    y = 880
+    d.line([M, y, W-M, y], fill=line, width=2)
     y += 34
     NF = _nf(25); CF = _kf(True, 39)
     for i, (hl, sub) in enumerate(headlines_subs[:3]):
-        d.text((M, y + 10), str(i+1), font=NF, fill=acc)
-        d.text((M+48, y), _fit(d, hl, CF, (W-M) - (M+48), -0.5), font=CF, fill=_INK)
+        d.text((M, y + 10), str(i+1), font=NF, fill=wsoft)
+        d.text((M+48, y), _fit(d, hl, CF, (W-M) - (M+48), -0.5), font=CF, fill=(255, 255, 255))
         y += 74
         if i < len(headlines_subs[:3]) - 1:
-            d.line([M+48, y - 18, W-M, y - 18], fill=_HAIR, width=2)
+            d.line([M+48, y - 18, W-M, y - 18], fill=line, width=2)
 
-    cta = "넘겨서 자세히 보기"; cf = _kf(True, 37)
-    d.text((M, H-112), cta, font=cf, fill=acc)
-    d.text((M + d.textlength(cta, font=cf) + 14, H-112), "→", font=cf, fill=acc)
+    cta = "넘겨서 자세히 보기"; cf = _kf(True, 36)
+    bw = d.textlength(cta, font=cf) + 130
+    d.rounded_rectangle([M, H-140, M+bw, H-140+82], radius=41, fill=(255, 255, 255))
+    d.text((M+36, H-99), cta, font=cf, fill=acc, anchor="lm")
+    d.text((M+36 + d.textlength(cta, font=cf) + 20, H-99), "→", font=cf, fill=acc, anchor="lm")
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=93)
